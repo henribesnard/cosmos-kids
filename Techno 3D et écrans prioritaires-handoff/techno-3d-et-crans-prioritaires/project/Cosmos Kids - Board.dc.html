@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; background: #05080f; color: #e8f0ff; font-family: Outfit, system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  a { color: #63e6ff; text-decoration: none; }
+  a:hover { color: #a9f0ff; }
+</style>
+</helmet>
+
+<div style="min-height: 100vh; padding: 46px 46px 90px; background: radial-gradient(120% 70% at 20% 0%, #0c1530 0%, #05080f 55%);">
+
+  <div style="display: flex; align-items: flex-end; gap: 40px; margin-bottom: 8px;">
+    <div>
+      <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 14px;">
+        <span style="font-size: 20px;">🌌</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: .18em; font-size: 14px;">COSMOS</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; letter-spacing: .18em; font-size: 14px; color: #63e6ff;">KIDS</span>
+      </div>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-size: 44px; font-weight: 700; letter-spacing: -.02em; line-height: 1.05;">{{ t.title }}</div>
+      <div style="margin-top: 12px; font-size: 16px; color: #93a6c9; max-width: 640px; text-wrap: pretty;">{{ t.sub }}</div>
+    </div>
+    <div style="flex: 1;"></div>
+    <div onClick="{{ toggleLang }}" style="display: flex; align-items: center; border-radius: 999px; border: 1px solid rgba(140,180,255,.2); overflow: hidden; cursor: pointer; font-size: 12px; font-weight: 600;">
+      <span style="padding: 9px 13px; background: {{ frBg }}; color: {{ frFg }};">FR</span>
+      <span style="padding: 9px 13px; background: {{ enBg }}; color: {{ enFg }};">EN</span>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 26px; margin: 30px 0 34px; flex-wrap: wrap;">
+    <sc-for list="{{ legend }}" as="lg" hint-placeholder-count="4">
+      <div style="min-width: 190px; padding: 14px 16px; border-radius: 14px; background: rgba(12,22,46,.5); border: 1px solid rgba(140,180,255,.12);">
+        <div style="font-size: 11px; letter-spacing: .16em; color: #7c8db0; margin-bottom: 5px;">{{ lg.label }}</div>
+        <div style="font-size: 14.5px; font-weight: 600; color: #dbe6f8;">{{ lg.value }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(470px, 1fr)); gap: 26px;">
+    <sc-for list="{{ screens }}" as="s" hint-placeholder-count="12">
+      <div id="{{ s.id }}" style="border-radius: 20px; background: rgba(10,18,38,.55); border: 1px solid rgba(140,180,255,.14); overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid rgba(140,180,255,.1);">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: .12em; color: #63e6ff; padding: 3px 8px; border-radius: 6px; background: rgba(99,230,255,.12);">{{ s.num }}</span>
+          <div style="flex: 1;">
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700;">{{ s.title }}</div>
+            <div style="font-size: 12px; color: #7c8db0;">{{ s.level }} · state = <span style="color: #9fd0ff;">{{ s.state }}</span></div>
+          </div>
+          <div onClick="{{ s.load }}" style="font-size: 12px; font-weight: 600; padding: 7px 13px; border-radius: 999px; cursor: pointer; background: {{ s.btnBg }}; border: 1px solid {{ s.btnBorder }}; color: {{ s.btnFg }};">{{ s.btn }}</div>
+        </div>
+
+        <div style="position: relative; height: 296px; background: radial-gradient(90% 80% at 60% 20%, #0a1330, #04070f);">
+          <sc-if value="{{ s.frame }}" hint-placeholder-val="{{ false }}">
+            <iframe src="{{ s.frame }}" style="position: absolute; top: 0; left: 0; width: 1440px; height: 900px; border: 0; transform: scale(.329); transform-origin: top left;" title="{{ s.title }}"></iframe>
+          </sc-if>
+          <sc-if value="{{ s.placeholder }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ s.load }}" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer;">
+              <div style="font-size: 30px; opacity: .8;">{{ s.glyph }}</div>
+              <div style="font-size: 13px; color: #8397ba;">{{ t.loadHint }}</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <div style="font-size: 10.5px; letter-spacing: .16em; color: #7c8db0; margin-bottom: 6px;">{{ t.hudLabel }}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              <sc-for list="{{ s.hud }}" as="h" hint-placeholder-count="4">
+                <span style="font-size: 11.5px; padding: 4px 9px; border-radius: 999px; background: rgba(99,230,255,.08); border: 1px solid rgba(99,230,255,.18); color: #bfe6f5;">{{ h.label }}</span>
+              </sc-for>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 10.5px; letter-spacing: .16em; color: #7c8db0; margin-bottom: 5px;">{{ t.interLabel }}</div>
+            <div style="font-size: 13.5px; line-height: 1.5; color: #dbe6f8; text-wrap: pretty;">{{ s.inter }}</div>
+          </div>
+          <div>
+            <div style="font-size: 10.5px; letter-spacing: .16em; color: #7c8db0; margin-bottom: 5px;">{{ t.apiLabel }}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 12.5px; color: #9fd0ff;">{{ s.api }}</div>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top: 44px; padding: 24px 26px; border-radius: 20px; background: rgba(12,22,46,.45); border: 1px solid rgba(140,180,255,.12);">
+    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; margin-bottom: 16px;">{{ t.devTitle }}</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px;">
+      <sc-for list="{{ devNotes }}" as="d" hint-placeholder-count="4">
+        <div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #9fd0ff; margin-bottom: 6px;">{{ d.title }}</div>
+          <div style="font-size: 13.5px; line-height: 1.55; color: #c3d4ee; text-wrap: pretty;">{{ d.text }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fr&quot;,&quot;en&quot;],&quot;default&quot;:&quot;fr&quot;,&quot;tsType&quot;:&quot;'fr'|'en'&quot;}}">
+class Component extends DCLogic {
+  state = { lang: 'fr', loaded: {} };
+
+  componentDidMount() {
+    const p = (this.props || {}).lang;
+    if (p && p !== this.state.lang) this.setState({ lang: p });
+  }
+
+  renderVals() {
+    const L = this.state.lang, fr = L === 'fr';
+    const P = (a, b) => (fr ? a : b);
+
+    const defs = [
+      ['landing', '01', P('Landing page', 'Landing page'), P('Hors scène — Terre en fond', 'Off-scene — Earth backdrop'), '🌍',
+        [P('Titre + accroche', 'Headline'), P('2 CTA', '2 CTAs'), P('Sélecteur FR/EN', 'FR/EN switch'), P('3 repères', '3 stats')],
+        P('Clic « Commencer depuis la Terre » → screen = app, vue Terre. « Explorer l’Univers » saute au niveau 6.',
+          'Clicking “Start from Earth” sets screen = app on the Earth view. “Explore the Universe” jumps to level 6.'),
+        'goToState("landing")'],
+      ['earth', '02', P('Vue Terre — début du voyage', 'Earth view — journey start'), P('Niveau 1', 'Level 1'), '🌍',
+        [P('Titre d’intro + 2 CTA', 'Intro title + 2 CTAs'), P('Fiche Terre', 'Earth card'), 'NOVA', P('Mission 01', 'Mission 01'), P('Mini-carte', 'Minimap'), P('Fil d’Ariane', 'Breadcrumb')],
+        P('Glisser = orbite autour de la Terre. Molette = zoom. Labels Terre / Lune / ISS. Dézoom extrême → niveau 2.',
+          'Drag orbits Earth. Wheel zooms. Earth / Moon / ISS labels. Extreme zoom-out steps to level 2.'),
+        'goToState("earth") · cosmos-hover · cosmos-select'],
+      ['solar', '03', P('Vue Système solaire', 'Solar System view'), P('Niveau 2', 'Level 2'), '☀️',
+        [P('Orbites + labels', 'Orbits + labels'), P('Curseur d’échelle', 'Scale slider'), P('Contrôle du temps', 'Time control'), P('Panneau Affichage', 'Display panel')],
+        P('Double-clic sur une planète = voyage. ×1 / ×100 / ×10 000 accélère les orbites. Ceinture d’astéroïdes et comète animées.',
+          'Double-click a planet to travel. ×1 / ×100 / ×10,000 speeds up orbits. Animated asteroid belt and comet.'),
+        'goToState("solar") · set({timeScale})'],
+      ['planet', '04', P('Vue planète — Saturne', 'Planet view — Saturn'), P('Niveau 2', 'Level 2'), '🪐',
+        [P('Fiche complète', 'Full card'), P('Le savais-tu ?', 'Did you know?'), P('Explique-moi ×3', 'Explain ×3'), P('Écouter l’histoire', 'Listen')],
+        P('Caméra en orbite serrée, anneaux visibles. La fiche ouvre les trois niveaux d’explication et l’audio.',
+          'Tight orbital camera, rings visible. The card exposes the three explanation levels and audio playback.'),
+        'flyTo("saturn") → cosmos-travel / cosmos-arrive'],
+      ['star', '05', P('Vue étoile — Sirius', 'Star view — Sirius'), P('Niveau 3', 'Level 3'), '✨',
+        [P('Fiche étoile', 'Star card'), P('Tu regardes dans le passé', 'Looking into the past'), P('Comparateur', 'Comparator')],
+        P('Couleurs d’étoiles selon la température. Le bloc « passé » convertit la distance en années de voyage de la lumière.',
+          'Star colours follow temperature. The “past” block turns distance into light-travel years.'),
+        'goToState("star")'],
+      ['nebula', '06', P('Vue nébuleuse — Orion', 'Nebula view — Orion'), P('Niveau 4', 'Level 4'), '🌫',
+        [P('Fiche nébuleuse', 'Nebula card'), P('Labels adaptatifs', 'Adaptive labels')],
+        P('Nuage volumétrique en couches de sprites additifs, traversable à la caméra.',
+          'Volumetric cloud built from layered additive sprites; the camera can fly through it.'),
+        'goToState("nebula")'],
+      ['exo', '07', P('Vue exoplanète — TRAPPIST-1e', 'Exoplanet view — TRAPPIST-1e'), P('Niveau 3', 'Level 3'), '🌱',
+        [P('Zone habitable', 'Habitable zone'), P('Fiche exoplanète', 'Exoplanet card')],
+        P('Anneau vert = zone potentiellement habitable, sans affirmer qu’une vie y existe.',
+          'Green band = potentially habitable zone, with no claim that life exists there.'),
+        'goToState("exo")'],
+      ['blackhole', '08', P('Vue trou noir — Sagittarius A*', 'Black hole view — Sagittarius A*'), P('Niveau 4', 'Level 4'), '🕳',
+        [P('Badge Zone extrême', 'Extreme-zone badge'), P('Limite pédagogique', 'Teaching limit'), 'NOVA'],
+        P('Disque d’accrétion en rotation différentielle, anneau de photons, lentille. Le zoom se bloque avant l’horizon : message « Plus près, même la lumière ne pourrait plus revenir ! »',
+          'Differentially rotating accretion disc, photon ring, lensing. Zoom stops before the horizon with the “not even light could come back” message.'),
+        'cosmos-limit → minDist = 34'],
+      ['galaxy', '09', P('Vue Voie lactée', 'Milky Way view'), P('Niveau 4', 'Level 4'), '🌌',
+        [P('« Nous sommes ici »', '“We are here”'), P('Nébuleuses + pulsar + Sgr A*', 'Nebulae + pulsar + Sgr A*')],
+        P('26 000 points en 4 bras. Le Soleil devient un point marqué, cliquable comme les autres objets.',
+          '26,000 points across 4 arms. The Sun becomes a single marked point, clickable like any object.'),
+        'goToState("galaxy")'],
+      ['universe', '10', P('Univers observable', 'Observable Universe'), P('Niveau 6', 'Level 6'), '🕸',
+        [P('Écran ultime', 'Ultimate screen'), P('2 CTA', '2 CTAs'), 'NOVA'],
+        P('Filaments et vides générés entre 130 nœuds. À l’arrivée au niveau 6, l’écran ultime apparaît ; « Retourner sur Terre » rejoue la descente.',
+          'Filaments and voids generated between 130 nodes. Reaching level 6 triggers the ultimate screen; “Return to Earth” replays the descent.'),
+        'cosmos-level {n: 6}'],
+      ['search', '11', P('Recherche universelle', 'Universal search'), P('Overlay', 'Overlay'), '🔍',
+        [P('Champ + résultats', 'Field + results'), P('Miniature · type · distance', 'Thumb · type · distance')],
+        P('« trou noir » renvoie les objets de type trou noir. Cmd/Ctrl+K ouvre, Échap ferme. Un résultat déclenche le voyage.',
+          '“black hole” returns black-hole type objects. Cmd/Ctrl+K opens, Esc closes. Picking a result starts the flight.'),
+        'query → BODIES filter → flyTo(id)'],
+      ['compare', '12', P('Comparateur d’astres', 'Size comparator'), P('Overlay', 'Overlay'), '⚖',
+        [P('Comparaison de tailles', 'Size compare'), P('Vitesse de la lumière', 'Speed of light')],
+        P('Trois paires (Terre/Jupiter, Jupiter/Soleil, Soleil/Bételgeuse) et les temps de trajet de la lumière.',
+          'Three pairs (Earth/Jupiter, Jupiter/Sun, Sun/Betelgeuse) plus light-travel times.'),
+        'COMPARISONS · LIGHT_TRIPS'],
+      ['mission', '13', P('Mode Mission', 'Mission mode'), P('Niveau 2', 'Level 2'), '🚀',
+        [P('Objectifs cochables', 'Checkable objectives'), P('Progression', 'Progress bar'), P('Récompense', 'Reward')],
+        P('Chaque arrivée coche automatiquement l’objectif correspondant et crée une découverte.',
+          'Every arrival ticks the matching objective and records a discovery.'),
+        'cosmos-arrive → done[missionId + objId]'],
+      ['free', '14', P('Mode exploration libre', 'Free exploration'), P('Niveau 2', 'Level 2'), '🌌',
+        [P('Retour', 'Back'), P('Recherche', 'Search'), P('Nom survolé', 'Hovered name')],
+        P('Interface réduite à trois éléments : l’espace occupe tout l’écran.',
+          'HUD reduced to three elements: space fills the whole screen.'),
+        'goToState("free")']
+    ];
+
+    const screens = defs.map(([id, num, title, level, glyph, hud, inter, api]) => {
+      const on = !!this.state.loaded[id];
+      return {
+        id, num, title, level, glyph, state: id, inter, api,
+        hud: hud.map(label => ({ label })),
+        frame: on ? ('Cosmos%20Kids.dc.html?state=' + id + '&lang=' + L) : null,
+        placeholder: !on,
+        btn: on ? P('Recharger', 'Reload') : P('Charger', 'Load'),
+        btnBg: on ? 'rgba(99,230,255,.16)' : 'transparent',
+        btnBorder: on ? 'rgba(99,230,255,.4)' : 'rgba(140,180,255,.2)',
+        btnFg: on ? '#eaf6ff' : '#93a6c9',
+        load: () => this.setState(s => ({ loaded: { ...s.loaded, [id]: (s.loaded[id] || 0) + 1 } }))
+      };
+    });
+
+    return {
+      screens,
+      t: {
+        title: P('16 états, une seule scène 3D', '16 states, one 3D scene'),
+        sub: P('Référence fonctionnelle du prototype : chaque carte charge la vue réelle en 1440 × 900 et décrit son HUD, ses interactions et l’appel qui la déclenche.',
+               'Functional reference for the prototype: each card loads the real 1440 × 900 view and documents its HUD, interactions and triggering call.'),
+        loadHint: P('Charger la vue 3D', 'Load the 3D view'),
+        hudLabel: P('HUD PRÉSENT', 'HUD PRESENT'),
+        interLabel: P('INTERACTIONS', 'INTERACTIONS'),
+        apiLabel: P('APPEL / ÉVÉNEMENT', 'CALL / EVENT'),
+        devTitle: P('Notes de développement', 'Development notes')
+      },
+      legend: [
+        { label: P('CIBLE', 'TARGET'), value: '1440 × 900 · desktop' },
+        { label: P('RENDU', 'RENDERING'), value: P('three.js — une scène, 9 coques', 'three.js — one scene, 9 shells') },
+        { label: P('DONNÉES', 'DATA'), value: 'cosmos-data.js' },
+        { label: P('LANGUES', 'LANGUAGES'), value: 'FR / EN' }
+      ],
+      devNotes: [
+        { title: P('Une scène, pas des pages', 'One scene, not pages'),
+          text: P('cosmos-stage.js contient neuf groupes d’échelle. Un changement de niveau ne recharge rien : les deux groupes se croisent en opacité pendant que la caméra recule. Aucun écran n’est une page séparée.',
+                  'cosmos-stage.js holds nine scale groups. A level change reloads nothing: the two groups cross-fade while the camera pulls back. No screen is a separate page.') },
+        { title: P('Contenu séparé du rendu', 'Content separate from rendering'),
+          text: P('Astres, missions, comparaisons, textes NOVA et copie d’interface vivent dans cosmos-data.js, en paires {fr, en}. Ajouter un astre = ajouter un objet, sans toucher au HUD.',
+                  'Bodies, missions, comparisons, NOVA lines and UI copy live in cosmos-data.js as {fr, en} pairs. Adding a body means adding one object, with no HUD change.') },
+        { title: P('Voyage = une seule fonction', 'Travel is a single function'),
+          text: P('flyTo(id) émet cosmos-travel, joue l’accélération (FOV + distance en trois phases) puis émet cosmos-arrive. Le HUD ne fait que réagir aux deux événements.',
+                  'flyTo(id) emits cosmos-travel, plays the acceleration (FOV + distance in three phases), then emits cosmos-arrive. The HUD only reacts to those two events.') },
+        { title: P('Placeholders d’assets', 'Asset placeholders'),
+          text: P('Les textures sont générées procéduralement (bruit fBm) dans makeTexture(). Remplacer cette fonction par des cartes NASA suffira, sans changer le reste.',
+                  'Textures are procedurally generated (fBm noise) in makeTexture(). Swapping that one function for NASA maps is enough; nothing else changes.') }
+      ],
+      frBg: fr ? 'rgba(99,230,255,.22)' : 'transparent', frFg: fr ? '#eaf6ff' : '#8397ba',
+      enBg: fr ? 'transparent' : 'rgba(99,230,255,.22)', enFg: fr ? '#8397ba' : '#eaf6ff',
+      toggleLang: () => this.setState({ lang: fr ? 'en' : 'fr' })
+    };
+  }
+}
+
+</script>
+</body>
+</html>

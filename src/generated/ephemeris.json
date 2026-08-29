@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "provider": "NASA/JPL Horizons",
+  "center": {
+    "id": 10,
+    "name": "Sun",
+    "query": "500@10"
+  },
+  "epoch": "2026-08-28T00:00:00.000Z",
+  "generatedAt": "2026-08-28T09:52:34.328Z",
+  "referenceFrame": "ICRF",
+  "referencePlane": "ecliptic",
+  "units": {
+    "position": "km",
+    "velocity": "km/s"
+  },
+  "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "objects": [
+    {
+      "bodyId": "mercury",
+      "jplId": 199,
+      "name": "Mercury",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": -48049537.43462535,
+        "y": 21894955.82009381,
+        "z": 6196275.995058477
+      },
+      "velocityKmPerSecond": {
+        "x": -30.22973117374196,
+        "y": -42.26597855408512,
+        "z": -0.6815788095048934
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27199%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "venus",
+      "jplId": 299,
+      "name": "Venus",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 53812110.44760635,
+        "y": -94603265.43265463,
+        "z": -4404646.396278054
+      },
+      "velocityKmPerSecond": {
+        "x": 30.20506567142515,
+        "y": 17.19538216499432,
+        "z": -1.506552410630221
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27299%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "earth",
+      "jplId": 399,
+      "name": "Earth",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 136241487.3681334,
+        "y": -65397345.64424893,
+        "z": 3094.497089318931
+      },
+      "velocityKmPerSecond": {
+        "x": 12.40252548824239,
+        "y": 26.73241602506789,
+        "z": -0.002806349482810333
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27399%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "mars",
+      "jplId": 499,
+      "name": "Mars",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 85333698.66990614,
+        "y": 209906018.6147723,
+        "z": 2306455.983767539
+      },
+      "velocityKmPerSecond": {
+        "x": -21.52629294780508,
+        "y": 11.18586431621966,
+        "z": 0.7622498917843239
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27499%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "jupiter",
+      "jplId": 599,
+      "name": "Jupiter",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": -492194063.7135563,
+        "y": 620736895.796176,
+        "z": 8433626.665650725
+      },
+      "velocityKmPerSecond": {
+        "x": -10.39779249287489,
+        "y": -7.514859537611921,
+        "z": 0.2638755404540838
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27599%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "saturn",
+      "jplId": 699,
+      "name": "Saturn",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 1391759829.550522,
+        "y": 236441384.5676566,
+        "z": -59518266.3526575
+      },
+      "velocityKmPerSecond": {
+        "x": -2.154678678195215,
+        "y": 9.497901442025483,
+        "z": -0.07909528902894625
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27699%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "uranus",
+      "jplId": 799,
+      "name": "Uranus",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 1353934763.065797,
+        "y": 2575029963.079391,
+        "z": -7991994.102060914
+      },
+      "velocityKmPerSecond": {
+        "x": -6.088439015321669,
+        "y": 2.848267196777081,
+        "z": 0.08927263677487263
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27799%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    },
+    {
+      "bodyId": "neptune",
+      "jplId": 899,
+      "name": "Neptune",
+      "epoch": "2026-08-28T00:00:00.000Z",
+      "julianDate": 2461280.5,
+      "positionKm": {
+        "x": 4464479393.161956,
+        "y": 190434372.8140003,
+        "z": -106803820.1589544
+      },
+      "velocityKmPerSecond": {
+        "x": -0.2763776064394642,
+        "y": 5.459119100691423,
+        "z": -0.1063765303731741
+      },
+      "sourceUrl": "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND=%27899%27&OBJ_DATA=NO&MAKE_EPHEM=YES&EPHEM_TYPE=VECTORS&CENTER=%27500%4010%27&START_TIME=%272026-08-28T00%3A00%3A00%27&STOP_TIME=%272026-08-28T00%3A02%3A00%27&STEP_SIZE=%271+m%27&OUT_UNITS=KM-S&VEC_TABLE=2&REF_SYSTEM=ICRF&REF_PLANE=ECLIPTIC&CSV_FORMAT=YES"
+    }
+  ]
+}

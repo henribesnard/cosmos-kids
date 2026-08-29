@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #03060f; color: #e8f0ff; font-family: Outfit, system-ui, sans-serif; overflow: hidden; }
+  * { box-sizing: border-box; }
+  a { color: #63e6ff; text-decoration: none; }
+  a:hover { color: #a9f0ff; }
+  button { font-family: inherit; }
+  @keyframes ck-pulse { 0%, 100% { opacity: .35; transform: scale(1); } 50% { opacity: .9; transform: scale(1.06); } }
+  @keyframes ck-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes ck-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ck-sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes ck-blink { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+</style>
+<script src="./cosmos-data.js"></script>
+<script type="importmap">
+{ "imports": { "three": "https://esm.sh/three@0.160.0" } }
+</script>
+<script type="module" src="./cosmos-stage.js"></script>
+</helmet>
+
+<div style="position: relative; width: 100%; height: 100vh; min-height: 640px; overflow: hidden; background: radial-gradient(120% 90% at 70% 20%, #0b1430 0%, #03060f 60%); font-family: Outfit, system-ui, sans-serif;">
+
+  <x-import component-from-global-scope="cosmos-stage" state="landing" hint-size="100%,100%"></x-import>
+
+  <!-- ===== HUD ===== -->
+  <sc-if value="{{ inApp }}" hint-placeholder-val="{{ false }}">
+  <div style="position: absolute; inset: 0; pointer-events: none;">
+
+    <!-- header -->
+    <sc-if value="{{ chrome }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 74px; display: flex; align-items: center; gap: 28px; padding: 0 26px; pointer-events: auto; background: linear-gradient(180deg, rgba(3,6,15,.72), rgba(3,6,15,0));">
+      <div onClick="{{ goLanding }}" style="display: flex; align-items: center; gap: 9px; cursor: pointer;">
+        <span style="font-size: 20px;">🌌</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: .16em; font-size: 15px; color: #fff;">COSMOS</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 400; letter-spacing: .16em; font-size: 15px; color: #63e6ff;">KIDS</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 22px;">
+        <sc-for list="{{ nav }}" as="item" hint-placeholder-count="4">
+          <div onClick="{{ item.go }}" style="font-size: 14px; font-weight: 500; cursor: pointer; padding-bottom: 3px; color: {{ item.color }}; border-bottom: 2px solid {{ item.line }};">{{ item.label }}</div>
+        </sc-for>
+      </div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div onClick="{{ openSearch }}" style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 12px; border-radius: 999px; background: rgba(12,22,46,.6); border: 1px solid rgba(140,180,255,.16); cursor: pointer; backdrop-filter: blur(10px);">
+          <span style="font-size: 14px;">🔍</span>
+          <span style="font-size: 13px; color: #93a6c9;">{{ t.searchShort }}</span>
+        </div>
+        <div onClick="{{ toggleLang }}" style="display: flex; height: 38px; align-items: center; border-radius: 999px; background: rgba(12,22,46,.6); border: 1px solid rgba(140,180,255,.16); overflow: hidden; cursor: pointer; font-size: 12px; font-weight: 600;">
+          <span style="padding: 0 11px; height: 100%; display: flex; align-items: center; background: {{ frBg }}; color: {{ frFg }};">FR</span>
+          <span style="padding: 0 11px; height: 100%; display: flex; align-items: center; background: {{ enBg }}; color: {{ enFg }};">EN</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 999px; background: rgba(12,22,46,.6); border: 1px solid rgba(140,180,255,.16); font-size: 13px; color: #cfe0ff;">
+          <span>🏆</span><span style="font-weight: 600;">{{ t.levelShort }}</span>
+        </div>
+        <div style="width: 38px; height: 38px; border-radius: 999px; background: linear-gradient(140deg, #6a8bff, #a67bff); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #08101f;">L</div>
+      </div>
+    </div>
+
+    <!-- breadcrumb -->
+    <div style="position: absolute; top: 82px; left: 26px; display: flex; align-items: center; gap: 8px; pointer-events: auto;">
+      <sc-for list="{{ crumbs }}" as="c" hint-placeholder-count="4">
+        <div onClick="{{ c.go }}" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <span style="font-size: 12.5px; font-weight: 500; letter-spacing: .04em; color: {{ c.color }};">{{ c.label }}</span>
+          <span style="font-size: 12px; color: #4a5c80;">{{ c.sep }}</span>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <!-- hover chip -->
+    <sc-if value="{{ hover }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 118px; left: 50%; transform: translateX(-50%); pointer-events: none; animation: ck-fade .18s ease both;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-radius: 999px; background: rgba(8,16,34,.6); border: 1px solid rgba(160,210,255,.22); backdrop-filter: blur(12px);">
+        <span style="font-size: 17px;">{{ hover.glyph }}</span>
+        <div>
+          <div style="font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 700;">{{ hover.name }}</div>
+          <div style="font-size: 12px; color: #93a6c9;">{{ hover.sub }}</div>
+        </div>
+        <div style="width: 1px; height: 22px; background: rgba(160,210,255,.2);"></div>
+        <div style="font-size: 12px; color: #63e6ff; font-weight: 600;">{{ t.clickToDiscover }}</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- mission panel -->
+    <sc-if value="{{ showMission }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 26px; top: 128px; width: 274px; pointer-events: auto; animation: ck-rise .3s ease both;">
+      <div style="border-radius: 20px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px); padding: 18px; box-shadow: 0 24px 60px rgba(0,0,0,.45);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+          <div style="font-size: 11.5px; letter-spacing: .18em; font-weight: 600; color: #ffb35c;">🚀 {{ t.missionLabel }} {{ mission.num }}</div>
+          <div onClick="{{ nextMission }}" style="font-size: 11px; color: #93a6c9; cursor: pointer;">→</div>
+        </div>
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700; line-height: 1.2; margin-bottom: 14px;">{{ mission.title }}</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <sc-for list="{{ mission.objectives }}" as="o" hint-placeholder-count="5">
+            <div onClick="{{ o.go }}" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+              <span style="font-size: 14px; color: {{ o.color }};">{{ o.mark }}</span>
+              <span style="font-size: 13.5px; color: {{ o.color }}; text-decoration: {{ o.strike }};">{{ o.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top: 15px; height: 5px; border-radius: 999px; background: rgba(160,200,255,.12); overflow: hidden;">
+          <div style="height: 100%; width: {{ mission.pct }}; border-radius: 999px; background: linear-gradient(90deg, #63e6ff, #a67bff);"></div>
+        </div>
+        <div style="margin-top: 11px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cfe0ff;">
+          <span style="color: #93a6c9;">{{ t.reward }}</span><span style="font-weight: 600;">{{ mission.reward }}</span>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- info card -->
+    <sc-if value="{{ card }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; right: 26px; top: 92px; width: 356px; max-height: calc(100vh - 330px); overflow: auto; pointer-events: auto; animation: ck-rise .32s ease both;">
+      <div style="border-radius: 22px; background: rgba(10,18,38,.62); border: 1px solid rgba(140,180,255,.16); backdrop-filter: blur(18px); box-shadow: 0 30px 80px rgba(0,0,0,.55); overflow: hidden;">
+        <div style="padding: 20px 20px 16px; border-bottom: 1px solid rgba(140,180,255,.1);">
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+            <span style="font-size: 30px; line-height: 1;">{{ card.glyph }}</span>
+            <div style="flex: 1;">
+              <div style="font-family: 'Space Grotesk', sans-serif; font-size: 27px; font-weight: 700; line-height: 1.05;">{{ card.name }}</div>
+              <div style="font-size: 13.5px; color: #93a6c9; margin-top: 3px;">{{ card.sub }}</div>
+            </div>
+            <div onClick="{{ closeCard }}" style="font-size: 15px; color: #7c8db0; cursor: pointer; padding: 2px 4px;">✕</div>
+          </div>
+          <sc-if value="{{ card.warning }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top: 13px; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(255,140,60,.14); border: 1px solid rgba(255,170,90,.35); animation: ck-pulse 2.6s ease-in-out infinite;">
+              <span style="font-size: 12.5px; font-weight: 600; color: #ffc78a;">⚠️ {{ card.warning }}</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px;">
+          <sc-for list="{{ card.stats }}" as="s" hint-placeholder-count="6">
+            <div>
+              <div style="font-size: 11px; letter-spacing: .04em; color: #8397ba; margin-bottom: 2px;">{{ s.label }}</div>
+              <div style="font-size: 15px; font-weight: 600; color: #eaf2ff;">{{ s.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="margin: 4px 16px 16px; padding: 15px 16px; border-radius: 16px; background: linear-gradient(150deg, rgba(166,123,255,.16), rgba(99,230,255,.08)); border: 1px solid rgba(166,123,255,.25);">
+          <div style="font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #d9c9ff; margin-bottom: 6px;">{{ t.didYouKnow }}</div>
+          <div style="font-size: 14.5px; line-height: 1.45; font-weight: 500; text-wrap: pretty;">{{ card.fact }}</div>
+        </div>
+
+        <div style="margin: 0 16px 16px; padding: 15px 16px; border-radius: 16px; background: rgba(6,12,28,.5); border: 1px solid rgba(140,180,255,.13);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px;">
+            <div style="font-size: 12.5px; font-weight: 700; color: #cfe0ff;">{{ t.explainMe }}</div>
+            <div style="display: flex; gap: 5px;">
+              <sc-for list="{{ explainTabs }}" as="x" hint-placeholder-count="3">
+                <div onClick="{{ x.go }}" style="font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 999px; cursor: pointer; background: {{ x.bg }}; color: {{ x.fg }}; border: 1px solid {{ x.border }};">{{ x.label }}</div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="font-size: 14px; line-height: 1.5; color: #dbe6f8; text-wrap: pretty;">{{ card.explain }}</div>
+        </div>
+
+        <sc-if value="{{ card.lookback }}" hint-placeholder-val="{{ false }}">
+        <div style="margin: 0 16px 16px; padding: 14px 16px; border-radius: 16px; background: rgba(99,230,255,.07); border: 1px solid rgba(99,230,255,.2);">
+          <div style="font-size: 12.5px; font-weight: 700; color: #9df0ff; margin-bottom: 5px;">{{ t.lookingBack }}</div>
+          <div style="font-size: 13.5px; line-height: 1.45; color: #d6ecf5;">{{ card.lookback }}</div>
+          <div style="margin-top: 11px; display: flex; align-items: center; gap: 7px;">
+            <span style="font-size: 13px;">🌍</span>
+            <div style="flex: 1; height: 2px; background: linear-gradient(90deg, #63e6ff, rgba(99,230,255,.15));"></div>
+            <span style="font-size: 13px;">{{ card.glyph }}</span>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="padding: 0 16px 18px; display: flex; flex-direction: column; gap: 9px;">
+          <div onClick="{{ card.travel }}" style="height: 46px; border-radius: 14px; background: linear-gradient(120deg, #2f6bff, #63e6ff); color: #041226; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: 0 12px 30px rgba(47,107,255,.35);">{{ t.travelTo }} {{ card.name }}</div>
+          <div style="display: flex; gap: 9px;">
+            <div onClick="{{ card.explore }}" style="flex: 1; height: 42px; border-radius: 13px; border: 1px solid rgba(140,180,255,.22); background: rgba(20,32,60,.5); font-size: 13.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer;">{{ t.explore }}</div>
+            <div onClick="{{ card.collect }}" style="flex: 1; height: 42px; border-radius: 13px; border: 1px solid {{ card.collectBorder }}; background: {{ card.collectBg }}; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ card.collectFg }};">{{ card.collectLabel }}</div>
+          </div>
+          <div onClick="{{ toggleAudio }}" style="height: 46px; border-radius: 14px; border: 1px solid rgba(140,180,255,.18); background: rgba(6,12,28,.5); display: flex; align-items: center; gap: 12px; padding: 0 14px; cursor: pointer;">
+            <span style="width: 30px; height: 30px; border-radius: 999px; background: rgba(99,230,255,.16); display: flex; align-items: center; justify-content: center; font-size: 12px; color: #9df0ff;">{{ audioIcon }}</span>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: 600;">{{ t.listen }}</div>
+              <div style="height: 3px; margin-top: 5px; border-radius: 999px; background: rgba(160,200,255,.14); overflow: hidden;">
+                <div style="height: 100%; width: {{ audioPct }}; background: #63e6ff;"></div>
+              </div>
+            </div>
+            <span style="font-size: 12px; color: #93a6c9;">🔊 CC</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- NOVA -->
+    <sc-if value="{{ nova }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 26px; top: 128px; width: 292px; pointer-events: auto; animation: ck-rise .35s ease both;">
+      <div style="display: flex; gap: 11px; align-items: flex-start;">
+        <div style="width: 44px; height: 44px; flex: none; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #fff, #63e6ff 45%, #2f6bff 100%); box-shadow: 0 0 26px rgba(99,230,255,.55); animation: ck-pulse 3.4s ease-in-out infinite;"></div>
+        <div style="border-radius: 6px 18px 18px 18px; background: rgba(10,18,38,.66); border: 1px solid rgba(99,230,255,.22); backdrop-filter: blur(14px); padding: 13px 15px;">
+          <div style="font-size: 11px; letter-spacing: .16em; font-weight: 700; color: #63e6ff; margin-bottom: 5px;">💬 NOVA</div>
+          <div style="font-size: 13.5px; line-height: 1.45; text-wrap: pretty;">{{ nova }}</div>
+          <div style="display: flex; gap: 8px; margin-top: 11px;">
+            <div onClick="{{ novaYes }}" style="padding: 6px 14px; border-radius: 999px; background: rgba(99,230,255,.18); border: 1px solid rgba(99,230,255,.4); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;">{{ t.yes }}</div>
+            <div onClick="{{ novaLater }}" style="padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(140,180,255,.2); font-size: 12.5px; color: #93a6c9; cursor: pointer;">{{ t.later }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- bottom bar: scale + time + display -->
+    <sc-if value="{{ showBottom }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: auto;">
+      <div style="display: flex; align-items: center; gap: 4px; padding: 8px 12px; border-radius: 999px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px);">
+        <span style="font-size: 15px; padding: 0 6px 0 8px;" title="{{ t.scaleTitle }}">📏</span>
+        <sc-for list="{{ levels }}" as="l" hint-placeholder-count="6">
+          <div onClick="{{ l.go }}" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; cursor: pointer; background: {{ l.bg }}; border: 1px solid {{ l.border }};">
+            <span style="width: 6px; height: 6px; border-radius: 999px; background: {{ l.dot }};"></span>
+            <span style="font-size: 12.5px; font-weight: 600; color: {{ l.fg }};">{{ l.name }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-radius: 999px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px);">
+          <sc-for list="{{ speeds }}" as="s" hint-placeholder-count="4">
+            <div onClick="{{ s.go }}" style="padding: 5px 11px; border-radius: 999px; cursor: pointer; font-size: 12.5px; font-weight: 600; background: {{ s.bg }}; color: {{ s.fg }};">{{ s.label }}</div>
+          </sc-for>
+        </div>
+        <div onClick="{{ toggleDisplay }}" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px); cursor: pointer; font-size: 12.5px; font-weight: 600;">{{ t.display }}</div>
+        <div onClick="{{ openCompare }}" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px); cursor: pointer; font-size: 12.5px; font-weight: 600;">⚖ {{ t.compareTitle }}</div>
+        <div onClick="{{ enterFree }}" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px; background: rgba(99,230,255,.12); border: 1px solid rgba(99,230,255,.3); backdrop-filter: blur(16px); cursor: pointer; font-size: 12.5px; font-weight: 600; color: #9df0ff;">{{ t.freeMode }}</div>
+      </div>
+      <div style="font-size: 11.5px; color: #6b7d9e; letter-spacing: .03em;">{{ t.hint }} · {{ t.simplified }}</div>
+    </div>
+
+    <sc-if value="{{ showDisplay }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; right: 300px; bottom: 96px; width: 210px; pointer-events: auto; animation: ck-rise .2s ease both;">
+      <div style="border-radius: 16px; background: rgba(10,18,38,.72); border: 1px solid rgba(140,180,255,.18); backdrop-filter: blur(16px); padding: 14px;">
+        <sc-for list="{{ toggles }}" as="tg" hint-placeholder-count="5">
+          <div onClick="{{ tg.go }}" style="display: flex; align-items: center; gap: 10px; padding: 6px 0; cursor: pointer;">
+            <span style="font-size: 14px; color: {{ tg.color }};">{{ tg.mark }}</span>
+            <span style="font-size: 13.5px; color: #dbe6f8;">{{ tg.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+    </sc-if>
+
+    <!-- minimap -->
+    <sc-if value="{{ chrome }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; right: 26px; bottom: 26px; width: 236px; pointer-events: auto;">
+      <div style="border-radius: 18px; background: rgba(10,18,38,.58); border: 1px solid rgba(140,180,255,.15); backdrop-filter: blur(16px); padding: 14px;">
+        <div style="display: flex; gap: 13px; align-items: center;">
+          <div style="position: relative; width: 66px; height: 66px; flex: none; border-radius: 999px; border: 1px solid rgba(99,230,255,.28); background: radial-gradient(circle, rgba(99,230,255,.14), rgba(6,12,28,.2) 70%); overflow: hidden;">
+            <div style="position: absolute; inset: 0; background: conic-gradient(from 0deg, rgba(99,230,255,.42), transparent 32%); animation: ck-sweep 4.5s linear infinite;"></div>
+            <div style="position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 999px; background: #fff; box-shadow: 0 0 12px #63e6ff;"></div>
+            <div style="position: absolute; left: 74%; top: 34%; width: 3px; height: 3px; border-radius: 999px; background: #ffb35c;"></div>
+            <div style="position: absolute; left: 28%; top: 66%; width: 3px; height: 3px; border-radius: 999px; background: #a67bff;"></div>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 10.5px; letter-spacing: .16em; font-weight: 600; color: #8397ba; margin-bottom: 5px;">{{ t.youArePath }}</div>
+            <sc-for list="{{ tree }}" as="node" hint-placeholder-count="5">
+              <div style="font-size: 12px; line-height: 1.5; color: {{ node.color }}; padding-left: {{ node.indent }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ node.prefix }}{{ node.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- free mode strip -->
+    <sc-if value="{{ free }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 26px; top: 26px; display: flex; gap: 10px; pointer-events: auto;">
+      <div onClick="{{ exitFree }}" style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; background: rgba(10,18,38,.6); border: 1px solid rgba(140,180,255,.18); backdrop-filter: blur(14px); cursor: pointer; font-size: 13px; font-weight: 600;">← {{ t.exitFree }}</div>
+      <div onClick="{{ openSearch }}" style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; background: rgba(10,18,38,.6); border: 1px solid rgba(140,180,255,.18); backdrop-filter: blur(14px); cursor: pointer; font-size: 13px;">🔍</div>
+    </div>
+    </sc-if>
+
+    <!-- travel overlay -->
+    <sc-if value="{{ travel }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; animation: ck-fade .3s ease both;">
+      <div style="text-align: center;">
+        <div style="font-size: 11.5px; letter-spacing: .3em; font-weight: 600; color: #63e6ff; margin-bottom: 10px;">{{ travel.kicker }}</div>
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 62px; font-weight: 700; line-height: 1; letter-spacing: -.02em; text-shadow: 0 8px 40px rgba(0,0,0,.7);">{{ travel.name }}</div>
+        <sc-if value="{{ travel.distance }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top: 16px; display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 999px; background: rgba(8,16,34,.5); border: 1px solid rgba(140,180,255,.2); backdrop-filter: blur(10px);">
+            <span style="font-size: 12px; color: #8397ba;">{{ t.distance }}</span>
+            <span style="font-size: 15px; font-weight: 700;">{{ travel.distance }}</span>
+          </div>
+        </sc-if>
+        <div style="margin: 22px auto 0; width: 260px; height: 3px; border-radius: 999px; background: rgba(160,200,255,.14); overflow: hidden;">
+          <div style="height: 100%; width: {{ travel.pct }}; background: linear-gradient(90deg, #63e6ff, #a67bff); transition: width .3s linear;"></div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- toast -->
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 50%; top: 128px; transform: translateX(-50%); pointer-events: none; animation: ck-rise .3s ease both;">
+      <div style="display: flex; align-items: center; gap: 11px; padding: 12px 20px; border-radius: 999px; background: rgba(10,18,38,.72); border: 1px solid rgba(99,230,255,.35); backdrop-filter: blur(14px); box-shadow: 0 18px 50px rgba(0,0,0,.5);">
+        <span style="font-size: 18px;">{{ toast.glyph }}</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700;">{{ toast.text }}</span>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- black hole limit -->
+    <sc-if value="{{ limit }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 50%; bottom: 200px; transform: translateX(-50%); pointer-events: none; animation: ck-rise .3s ease both;">
+      <div style="max-width: 420px; text-align: center; padding: 14px 22px; border-radius: 18px; background: rgba(30,12,4,.6); border: 1px solid rgba(255,170,90,.4); backdrop-filter: blur(12px);">
+        <div style="font-size: 15px; font-weight: 700; color: #ffc78a; text-wrap: pretty;">{{ limit }}</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- earth intro -->
+    <sc-if value="{{ intro }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 320px; right: 400px; bottom: 96px; display: flex; flex-direction: column; align-items: center; gap: 18px; pointer-events: auto; animation: ck-rise .5s ease both;">
+      <div style="text-align: center;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 52px; font-weight: 700; letter-spacing: -.02em; text-shadow: 0 10px 44px rgba(0,0,0,.75);">{{ t.earthTitle }}</div>
+        <div style="margin-top: 10px; font-size: 18px; color: #c3d4ee; text-shadow: 0 4px 24px rgba(0,0,0,.8);">{{ t.earthSub }}</div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div onClick="{{ startTour }}" style="height: 52px; padding: 0 26px; border-radius: 16px; background: linear-gradient(120deg, #2f6bff, #63e6ff); color: #041226; font-weight: 700; font-size: 16px; display: flex; align-items: center; cursor: pointer; box-shadow: 0 16px 40px rgba(47,107,255,.4);">{{ t.earthCta }}</div>
+        <div onClick="{{ enterFree }}" style="height: 52px; padding: 0 24px; border-radius: 16px; border: 1px solid rgba(140,180,255,.28); background: rgba(10,18,38,.5); backdrop-filter: blur(12px); font-weight: 600; font-size: 15px; display: flex; align-items: center; cursor: pointer;">{{ t.earthCta2 }}</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ultimate / welcome home -->
+    <sc-if value="{{ ultimate }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: auto; background: radial-gradient(60% 60% at 50% 50%, rgba(3,6,15,.2), rgba(3,6,15,.78)); animation: ck-fade .6s ease both;">
+      <div style="max-width: 640px; text-align: center; padding: 0 30px;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 54px; font-weight: 700; line-height: 1.05; letter-spacing: -.02em;">{{ ultimate.title }}</div>
+        <div style="margin-top: 16px; font-size: 17px; line-height: 1.55; color: #c3d4ee; text-wrap: pretty;">{{ ultimate.text }}</div>
+        <div style="margin-top: 26px; display: flex; gap: 12px; justify-content: center;">
+          <div onClick="{{ closeUltimate }}" style="height: 50px; padding: 0 24px; border-radius: 16px; background: linear-gradient(120deg, #6a4bff, #a67bff); color: #08101f; font-weight: 700; font-size: 15px; display: flex; align-items: center; cursor: pointer;">{{ t.continueCta }}</div>
+          <div onClick="{{ goHome }}" style="height: 50px; padding: 0 24px; border-radius: 16px; border: 1px solid rgba(140,180,255,.28); background: rgba(10,18,38,.5); font-weight: 600; font-size: 15px; display: flex; align-items: center; cursor: pointer;">{{ t.homeCta }}</div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- search -->
+    <sc-if value="{{ search }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; pointer-events: auto; background: rgba(3,6,15,.62); backdrop-filter: blur(6px); display: flex; justify-content: center; padding-top: 118px; animation: ck-fade .2s ease both;">
+      <div onClick="{{ stop }}" style="width: 640px;">
+        <div style="border-radius: 22px; background: rgba(10,18,38,.86); border: 1px solid rgba(140,180,255,.2); box-shadow: 0 40px 100px rgba(0,0,0,.6); overflow: hidden;">
+          <div style="display: flex; align-items: center; gap: 13px; padding: 20px 22px; border-bottom: 1px solid rgba(140,180,255,.12);">
+            <span style="font-size: 19px;">🔍</span>
+            <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="{{ t.searchPlaceholder }}" style="flex: 1; background: transparent; border: none; outline: none; color: #eaf2ff; font-size: 19px; font-family: Outfit, sans-serif;" />
+            <div onClick="{{ closeSearch }}" style="font-size: 12px; color: #7c8db0; cursor: pointer; padding: 4px 8px; border: 1px solid rgba(140,180,255,.2); border-radius: 8px;">ESC</div>
+          </div>
+          <div style="max-height: 400px; overflow: auto;">
+            <sc-for list="{{ results }}" as="r" hint-placeholder-count="5">
+              <div onClick="{{ r.go }}" style="display: flex; align-items: center; gap: 14px; padding: 13px 22px; cursor: pointer; border-bottom: 1px solid rgba(140,180,255,.06);">
+                <div style="width: 42px; height: 42px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 19px; background: {{ r.chip }}; border: 1px solid rgba(140,180,255,.16);">{{ r.glyph }}</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 16px; font-weight: 600;">{{ r.name }}</div>
+                  <div style="font-size: 12.5px; color: #8397ba;">{{ r.kind }}</div>
+                </div>
+                <div style="font-size: 13px; color: #cfe0ff; font-weight: 500;">{{ r.distance }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding: 13px 22px; font-size: 12.5px; color: #7c8db0;">{{ searchFooter }}</div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- comparator -->
+    <sc-if value="{{ compare }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; inset: 0; pointer-events: auto; background: rgba(3,6,15,.68); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; animation: ck-fade .2s ease both;">
+      <div style="width: 820px; border-radius: 26px; background: rgba(10,18,38,.88); border: 1px solid rgba(140,180,255,.2); box-shadow: 0 50px 120px rgba(0,0,0,.65); overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 20px 24px; border-bottom: 1px solid rgba(140,180,255,.12);">
+          <sc-for list="{{ compareTabs }}" as="ct" hint-placeholder-count="2">
+            <div onClick="{{ ct.go }}" style="padding: 8px 16px; border-radius: 999px; cursor: pointer; font-size: 13.5px; font-weight: 600; background: {{ ct.bg }}; color: {{ ct.fg }}; border: 1px solid {{ ct.border }};">{{ ct.label }}</div>
+          </sc-for>
+          <div style="flex: 1;"></div>
+          <div onClick="{{ closeCompare }}" style="font-size: 15px; color: #7c8db0; cursor: pointer;">✕</div>
+        </div>
+
+        <sc-if value="{{ compare.size }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 30px 24px 26px;">
+          <div style="display: flex; align-items: flex-end; justify-content: center; gap: 56px; height: 300px;">
+            <sc-for list="{{ compare.items }}" as="it" hint-placeholder-count="2">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 14px;">
+                <div style="width: {{ it.size }}; height: {{ it.size }}; border-radius: 999px; background: {{ it.fill }}; box-shadow: 0 0 60px {{ it.glow }}; flex: none;"></div>
+                <div style="text-align: center;">
+                  <div style="font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;">{{ it.name }}</div>
+                  <div style="font-size: 13px; color: #8397ba;">{{ it.diameter }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top: 24px; text-align: center; font-size: 17px; font-weight: 600; color: #d9c9ff;">{{ compare.caption }}</div>
+          <div style="margin-top: 20px; display: flex; gap: 9px; justify-content: center;">
+            <sc-for list="{{ comparePairs }}" as="cp" hint-placeholder-count="3">
+              <div onClick="{{ cp.go }}" style="padding: 8px 15px; border-radius: 999px; cursor: pointer; font-size: 12.5px; font-weight: 600; background: {{ cp.bg }}; color: {{ cp.fg }}; border: 1px solid {{ cp.border }};">{{ cp.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ compare.light }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 26px 30px 30px;">
+          <div style="font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 700; margin-bottom: 20px;">{{ t.lightSpeedTitle }}</div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <sc-for list="{{ lightTrips }}" as="lt" hint-placeholder-count="5">
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div style="width: 168px; font-size: 14.5px; font-weight: 600;">🌍 → {{ lt.to }}</div>
+                <div style="flex: 1; height: 8px; border-radius: 999px; background: rgba(160,200,255,.1); overflow: hidden;">
+                  <div style="height: 100%; width: {{ lt.w }}; border-radius: 999px; background: linear-gradient(90deg, #63e6ff, #a67bff);"></div>
+                </div>
+                <div style="width: 190px; text-align: right; font-size: 14px; color: #cfe0ff; font-weight: 500;">{{ lt.time }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+  <!-- ===== LANDING ===== -->
+  <sc-if value="{{ isLanding }}" hint-placeholder-val="{{ true }}">
+  <div style="position: absolute; inset: 0; display: flex; flex-direction: column; background: linear-gradient(90deg, rgba(3,6,15,.92) 0%, rgba(3,6,15,.7) 38%, rgba(3,6,15,.05) 68%);">
+    <div style="display: flex; align-items: center; gap: 30px; padding: 30px 44px;">
+      <div style="display: flex; align-items: center; gap: 9px;">
+        <span style="font-size: 22px;">🌌</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: .18em; font-size: 16px;">COSMOS</span>
+        <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 400; letter-spacing: .18em; font-size: 16px; color: #63e6ff;">KIDS</span>
+      </div>
+      <div style="flex: 1;"></div>
+      <div onClick="{{ toggleLang }}" style="display: flex; align-items: center; border-radius: 999px; border: 1px solid rgba(140,180,255,.2); overflow: hidden; cursor: pointer; font-size: 12px; font-weight: 600;">
+        <span style="padding: 8px 12px; background: {{ frBg }}; color: {{ frFg }};">FR</span>
+        <span style="padding: 8px 12px; background: {{ enBg }}; color: {{ enFg }};">EN</span>
+      </div>
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; padding: 0 44px 60px;">
+      <div style="max-width: 620px;">
+        <div style="display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(99,230,255,.3); background: rgba(99,230,255,.08); font-size: 12px; letter-spacing: .14em; font-weight: 600; color: #9df0ff;">{{ t.landingBadge }}</div>
+        <div style="margin-top: 22px; font-family: 'Space Grotesk', sans-serif; font-size: 74px; font-weight: 700; line-height: 1.02; letter-spacing: -.03em;">
+          <div>{{ t.landing1 }}</div>
+          <div style="color: #63e6ff;">{{ t.landing2 }}</div>
+        </div>
+        <div style="margin-top: 22px; font-size: 19px; line-height: 1.55; color: #c3d4ee; max-width: 540px; text-wrap: pretty;">{{ t.landingText }}</div>
+        <div style="margin-top: 34px; display: flex; gap: 13px;">
+          <div onClick="{{ startEarth }}" style="height: 58px; padding: 0 28px; border-radius: 18px; background: linear-gradient(120deg, #2f6bff, #63e6ff); color: #041226; font-weight: 700; font-size: 17px; display: flex; align-items: center; cursor: pointer; box-shadow: 0 18px 46px rgba(47,107,255,.42);">{{ t.ctaPrimary }}</div>
+          <div onClick="{{ startUniverse }}" style="height: 58px; padding: 0 26px; border-radius: 18px; border: 1px solid rgba(140,180,255,.3); background: rgba(10,18,38,.5); backdrop-filter: blur(12px); font-weight: 600; font-size: 16px; display: flex; align-items: center; cursor: pointer;">{{ t.ctaSecondary }}</div>
+        </div>
+        <div style="margin-top: 42px; display: flex; gap: 32px;">
+          <sc-for list="{{ landingStats }}" as="ls" hint-placeholder-count="3">
+            <div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-size: 25px; font-weight: 700;">{{ ls.value }}</div>
+              <div style="font-size: 12.5px; color: #8397ba; letter-spacing: .04em;">{{ ls.label }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;lang&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fr&quot;,&quot;en&quot;],&quot;default&quot;:&quot;fr&quot;,&quot;tsType&quot;:&quot;'fr'|'en'&quot;,&quot;section&quot;:&quot;Contenu&quot;},&quot;startState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;landing&quot;,&quot;earth&quot;,&quot;solar&quot;,&quot;planet&quot;,&quot;blackhole&quot;,&quot;galaxy&quot;,&quot;universe&quot;,&quot;search&quot;,&quot;compare&quot;,&quot;mission&quot;,&quot;free&quot;],&quot;default&quot;:&quot;landing&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Contenu&quot;},&quot;novaEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Interface&quot;},&quot;labelsDensity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:1,&quot;max&quot;:3,&quot;step&quot;:1,&quot;default&quot;:2,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Interface&quot;}}">
+class Component extends DCLogic {
+  state = {
+    lang: 'fr', screen: 'landing', view: 'earth', sel: 'earth', hover: null,
+    search: false, query: '', ex: 0, compare: false, cTab: 'size', cIdx: 0,
+    display: false, toggles: { orbits: true, labels: true, trails: false, distances: false, scale: true },
+    time: 1, travel: null, travelPct: 0, toast: null, limit: null, nova: 'earth', novaOn: true,
+    free: false, intro: true, ultimate: false, audio: false, audioPct: 0,
+    missionIdx: 0, done: {}, discovered: ['earth', 'moon', 'iss', 'sun', 'mars', 'saturn', 'sirius', 'andromeda'],
+    ready: !!window.COSMOS_DATA
+  };
+
+  /* ---- lifecycle ---- */
+  componentDidMount() {
+    if (!this.state.ready) window.addEventListener('cosmos-data-ready', () => this.setState({ ready: true }), { once: true });
+    const P = this.props || {};
+    const p = new URLSearchParams(location.search);
+    const deep = p.get('state') || P.startState;
+    const lang = p.get('lang') || P.lang;
+    if (lang) this.setState({ lang });
+    if (P.novaEnabled === false) this.setState({ novaOn: false });
+    if (deep) this.applyDeepLink(deep);
+    this.hunt = setInterval(() => this.attach(), 120);
+    this.onStageReady = () => this.attach();
+    window.addEventListener('cosmos-stage-ready', this.onStageReady);
+    this.tick = setInterval(() => {
+      if (this.state.travel) this.setState(s => ({ travelPct: Math.min(100, s.travelPct + 5) }));
+      if (this.state.audio) this.setState(s => ({ audioPct: (s.audioPct + 2) % 100 }));
+    }, 120);
+    window.addEventListener('keydown', this.onKey);
+  }
+  componentWillUnmount() {
+    clearInterval(this.hunt); clearInterval(this.tick);
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('cosmos-stage-ready', this.onStageReady);
+  }
+  onKey = e => {
+    if (e.key === 'Escape') this.setState({ search: false, compare: false, display: false });
+    if ((e.key === 'k' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); this.setState({ search: true }); }
+  };
+  attach() {
+    const el = window.__cosmosStage || document.querySelector('cosmos-stage');
+    if (!el || el === this.stageEl || !el.goToState) return;
+    this.stageEl = el;
+    clearInterval(this.hunt);
+    el.addEventListener('cosmos-hover', e => this.setState({ hover: e.detail.id }));
+    el.addEventListener('cosmos-select', e => { if (e.detail.id) this.select(e.detail.id); });
+    el.addEventListener('cosmos-travel', e => {
+      this.setState({ travel: e.detail, travelPct: 4, sel: null, toast: null, intro: false });
+      clearTimeout(this._travelGuard);
+      this._travelGuard = setTimeout(() => {
+        if (this.state.travel) this.onArrive(this.state.travel);
+      }, 6000);
+    });
+    el.addEventListener('cosmos-arrive', e => this.onArrive(e.detail));
+    el.addEventListener('cosmos-limit', () => {
+      const b = this.body('sgra');
+      this.setState({ limit: this.tx(b.limit) });
+      clearTimeout(this._lt); this._lt = setTimeout(() => this.setState({ limit: null }), 4200);
+    });
+    el.addEventListener('cosmos-level', e => {
+      const lv = e.detail.n;
+      if (lv === 6 && !this._sawEnd) { this._sawEnd = true; setTimeout(() => this.setState({ ultimate: true, nova: 'universe' }), 1400); }
+    });
+    const gap = { 1: 112, 2: 74, 3: 48 }[(this.props || {}).labelsDensity ?? 2] || 74;
+    el.set({
+      ...this.state.toggles, timeScale: this.state.time, labelGap: gap,
+      labels: this.state.screen !== 'landing' && this.state.toggles.labels
+    });
+    const boot = this._pendingState || (this.state.screen === 'landing' ? 'landing' : this.state.view);
+    el.goToState(boot, true); this._pendingState = null;
+  }
+  applyDeepLink(id) {
+    const map = {
+      landing: { screen: 'landing' },
+      earth: { screen: 'app', view: 'earth', sel: 'earth', intro: true, nova: 'earth' },
+      solar: { screen: 'app', view: 'solar', sel: null, intro: false, nova: 'solar' },
+      planet: { screen: 'app', view: 'planet', sel: 'saturn', intro: false, nova: 'saturn' },
+      star: { screen: 'app', view: 'star', sel: 'sirius', intro: false, nova: null },
+      nebula: { screen: 'app', view: 'nebula', sel: 'orion', intro: false, nova: null },
+      exo: { screen: 'app', view: 'exo', sel: 'trappist', intro: false, nova: null },
+      blackhole: { screen: 'app', view: 'blackhole', sel: 'sgra', intro: false, nova: 'sgra' },
+      galaxy: { screen: 'app', view: 'galaxy', sel: 'milkyway', intro: false, nova: 'galaxy' },
+      universe: { screen: 'app', view: 'universe', sel: 'cosmicweb', intro: false, nova: 'universe', ultimate: true },
+      search: { screen: 'app', view: 'solar', sel: null, intro: false, search: true, query: 'trou noir', nova: null },
+      compare: { screen: 'app', view: 'solar', sel: null, intro: false, compare: true, nova: null },
+      mission: { screen: 'app', view: 'solar', sel: 'mars', intro: false, nova: 'mars' },
+      free: { screen: 'app', view: 'free', sel: null, intro: false, free: true, nova: null }
+    };
+    const s = map[id]; if (!s) return;
+    this.setState(s);
+    const stateName = id === 'landing' ? 'landing' : (s.view || 'earth');
+    if (this.stageEl) this.stageEl.goToState(stateName, true); else this._pendingState = stateName;
+  }
+
+  /* ---- helpers ---- */
+  get D() { return window.COSMOS_DATA; }
+  tx(v) { return v && typeof v === 'object' && ('fr' in v) ? v[this.state.lang] : v; }
+  body(id) { return this.D && this.D.BODIES.find(b => b.id === id); }
+  stage(fn, ...a) { if (this.stageEl && this.stageEl[fn]) this.stageEl[fn](...a); }
+  select(id) { this.setState({ sel: id, ex: 0, search: false, toast: null }); }
+  travelTo(id) {
+    this.setState({ search: false, compare: false, intro: false, sel: null });
+    const b = this.body(id);
+    const viewFor = { blackhole: 'blackhole', nebula: 'nebula', exo: 'exo', galaxy: 'galaxy', structure: 'universe' };
+    this.setState({ view: viewFor[b.kind] || (b.level === 1 ? 'earth' : b.level === 2 ? 'planet' : 'star') });
+    this.stage('flyTo', id);
+  }
+  onArrive(d) {
+    clearTimeout(this._travelGuard);
+    const disc = this.state.discovered.includes(d.id);
+    const done = { ...this.state.done };
+    for (const m of this.D.MISSIONS) for (const o of m.objectives) if (o.body === d.id) done[m.id + o.id] = true;
+    this.setState({
+      travel: null, travelPct: 0, sel: d.id, done,
+      discovered: disc ? this.state.discovered : [...this.state.discovered, d.id],
+      toast: { glyph: d.glyph, text: this.tx(this.D.UI.arrival) + ' ' + this.tx(d.name) + (disc ? '' : ' — ' + this.tx(this.D.UI.newDiscovery)) },
+      nova: this.D.NOVA[d.id] ? d.id : this.state.nova
+    });
+    clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: null }), 3600);
+  }
+
+  /* ---- render inputs ---- */
+  renderVals() {
+    const D = this.D;
+    if (!D) return { inApp: false, isLanding: true, t: {} };
+    const S = this.state, L = S.lang, tx = v => this.tx(v);
+    const U = D.UI;
+    const on = '#63e6ff', off = '#8397ba';
+
+    const t = {
+      searchShort: L === 'fr' ? 'Recherche' : 'Search', levelShort: L === 'fr' ? 'Niveau 7' : 'Level 7',
+      searchPlaceholder: tx(U.searchPlaceholder), clickToDiscover: tx(U.clickToDiscover),
+      didYouKnow: tx(U.didYouKnow), explainMe: tx(U.explainMe), travelTo: tx(U.travelTo), explore: tx(U.explore),
+      listen: tx(U.listen), distance: tx(U.distance), display: tx(U.display), compareTitle: '⚖ ' + tx(U.compareTitle),
+      freeMode: tx(U.freeMode), exitFree: tx(U.exitFree), scaleTitle: tx(U.scaleTitle), hint: tx(U.hint),
+      simplified: tx(U.simplified), missionLabel: tx(U.missionLabel), reward: tx(U.reward),
+      lookingBack: tx(U.lookingBack), lightSpeedTitle: tx(U.lightSpeedTitle),
+      earthTitle: tx(U.earthTitle), earthSub: tx(U.earthSub), earthCta: tx(U.earthCta), earthCta2: tx(U.earthCta2),
+      continueCta: tx(U.continueCta), homeCta: tx(U.homeCta), yes: L === 'fr' ? 'Oui !' : 'Yes!',
+      later: L === 'fr' ? 'Plus tard' : 'Later',
+      youArePath: L === 'fr' ? 'TU ES ICI' : 'YOU ARE HERE',
+      landingBadge: L === 'fr' ? '7-14 ANS · VOYAGE EN 3D' : 'AGES 7-14 · 3D JOURNEY',
+      landing1: tx(U.landingTitle)[0], landing2: tx(U.landingTitle)[1],
+      landingText: tx(U.landingText), ctaPrimary: tx(U.ctaPrimary), ctaSecondary: tx(U.ctaSecondary)
+    };
+    t.compareTitle = tx(U.compareTitle);
+
+    /* selected body card */
+    const b = S.sel && this.body(S.sel);
+    let card = null;
+    if (b && !S.travel) {
+      const exKey = ['simple', 'curious', 'expert'][S.ex];
+      const collected = S.discovered.includes(b.id);
+      const lyStat = b.stats.find(s => /année|light/i.test(tx(s.value)));
+      card = {
+        glyph: b.glyph, name: tx(b.name), sub: tx(b.sub),
+        stats: b.stats.map(s => ({ label: tx(s.label), value: tx(s.value) })),
+        fact: tx(b.fact), explain: tx(b.explain[exKey]),
+        warning: b.warning ? tx(b.warning) : null,
+        lookback: lyStat && b.kind !== 'exo' ? (L === 'fr'
+          ? 'La lumière que tu vois aujourd’hui est partie de cet astre il y a ' + tx(lyStat.value).replace(/années-lumière|light-years/, '') + 'ans.'
+          : 'The light you see today left this object about ' + tx(lyStat.value).replace(/light-years/, '') + 'years ago.') : null,
+        travel: () => this.travelTo(b.id),
+        explore: () => { this.stage('flyTo', b.id); },
+        collect: () => this.setState({ discovered: collected ? S.discovered : [...S.discovered, b.id] }),
+        collectLabel: collected ? (L === 'fr' ? '⭐ Dans mes découvertes' : '⭐ In my discoveries') : tx(U.addToFinds),
+        collectBg: collected ? 'rgba(255,179,92,.16)' : 'rgba(20,32,60,.5)',
+        collectBorder: collected ? 'rgba(255,179,92,.4)' : 'rgba(140,180,255,.22)',
+        collectFg: collected ? '#ffc78a' : '#e8f0ff'
+      };
+    }
+
+    /* hover chip */
+    const hb = S.hover && S.hover !== S.sel ? this.body(S.hover) : null;
+    const hover = hb ? { glyph: hb.glyph, name: tx(hb.name), sub: tx(hb.sub) } : null;
+
+    /* missions */
+    const m = D.MISSIONS[S.missionIdx];
+    const objs = m.objectives.map(o => {
+      const done = S.done[m.id + o.id] || o.done;
+      return {
+        label: tx(o.label), mark: done ? '☑' : '☐', color: done ? '#63e6ff' : '#c3d4ee',
+        strike: done ? 'line-through' : 'none', go: () => this.travelTo(o.body)
+      };
+    });
+    const pct = Math.round(objs.filter(o => o.mark === '☑').length / objs.length * 100);
+    const mission = { num: m.num, title: tx(m.title), reward: tx(m.reward), objectives: objs, pct: pct + '%' };
+
+    /* levels */
+    const curLevel = { earth: 1, solar: 2, planet: 2, free: 2, star: 3, exo: 3, nebula: 4, blackhole: 4, galaxy: 4, local: 5, universe: 6 }[S.view] || 1;
+    const levels = D.LEVELS.map(l => {
+      const active = l.n === curLevel;
+      return {
+        name: tx(l.name), dot: active ? on : 'rgba(160,200,255,.35)',
+        bg: active ? 'rgba(99,230,255,.16)' : 'transparent',
+        border: active ? 'rgba(99,230,255,.4)' : 'transparent',
+        fg: active ? '#eaf6ff' : off,
+        go: () => { this.setState({ view: ['earth', 'solar', 'star', 'galaxy', 'local', 'universe'][l.n - 1], sel: null, intro: false }); this.stage('setLevel', l.n); }
+      };
+    });
+
+    /* breadcrumb */
+    const path = [
+      { id: 'universe', label: tx(D.LEVELS[5].name), lv: 6 },
+      { id: 'local', label: tx(D.LEVELS[4].name), lv: 5 },
+      { id: 'galaxy', label: tx(D.LEVELS[3].name), lv: 4 },
+      { id: 'star', label: L === 'fr' ? 'Bras d’Orion' : 'Orion Arm', lv: 3 },
+      { id: 'solar', label: tx(D.LEVELS[1].name), lv: 2 },
+      { id: 'earth', label: b ? tx(b.name) : tx(D.LEVELS[0].name), lv: 1 }
+    ];
+    const crumbs = path.map((c, i) => ({
+      label: c.label, sep: i < path.length - 1 ? '›' : '',
+      color: c.lv === curLevel ? '#eaf6ff' : '#7c8db0',
+      go: () => { this.setState({ view: c.id, sel: null, intro: false }); this.stage('setLevel', c.lv); }
+    }));
+
+    /* minimap tree */
+    const tree = path.map((c, i) => ({
+      label: c.label, prefix: i === 0 ? '' : '└ ', indent: (i * 7) + 'px',
+      color: c.lv === curLevel ? '#9df0ff' : '#7c8db0'
+    }));
+
+    /* search */
+    const q = S.query.trim().toLowerCase();
+    const alias = { 'trou noir': 'blackhole', 'black hole': 'blackhole', 'nebuleuse': 'nebula', 'nébuleuse': 'nebula', 'galaxie': 'galaxy', 'galaxy': 'galaxy', 'etoile': 'star', 'étoile': 'star', 'star': 'star', 'planete': 'planet', 'planète': 'planet', 'planet': 'planet' };
+    const kindMatch = alias[q];
+    const pool = q ? D.BODIES.filter(x => kindMatch ? x.kind === kindMatch
+      : (tx(x.name).toLowerCase().includes(q) || tx(x.sub).toLowerCase().includes(q))) : D.BODIES.slice(0, 8);
+    const results = pool.slice(0, 8).map(x => ({
+      glyph: x.glyph, name: tx(x.name), kind: tx(U.kinds[x.kind] || x.kind),
+      distance: tx((x.stats.find(s => /distance/i.test(tx(s.label))) || x.stats[0]).value),
+      chip: 'rgba(' + (x.kind === 'blackhole' ? '255,179,92' : x.kind === 'galaxy' ? '166,123,255' : '99,230,255') + ',.12)',
+      go: () => this.travelTo(x.id)
+    }));
+
+    /* comparator */
+    const cmp = D.COMPARISONS[S.cIdx];
+    const maxD = Math.max(...cmp.sizes);
+    const compare = S.compare ? {
+      size: S.cTab === 'size', light: S.cTab === 'light',
+      caption: tx(cmp.caption),
+      items: cmp.pair.map((id, i) => {
+        const bb = this.body(id);
+        const px = Math.max(22, Math.pow(cmp.sizes[i] / maxD, 0.62) * 250);
+        return {
+          name: tx(bb.name), size: Math.round(px) + 'px', fill: cmp.color[i], glow: cmp.color[i] + '55',
+          diameter: cmp.sizes[i].toLocaleString(L === 'fr' ? 'fr-FR' : 'en-US') + ' km'
+        };
+      })
+    } : null;
+    const comparePairs = D.COMPARISONS.map((c, i) => {
+      const active = i === S.cIdx;
+      return {
+        label: c.pair.map(id => tx(this.body(id).name)).join(' vs '),
+        bg: active ? 'rgba(99,230,255,.16)' : 'transparent', fg: active ? '#eaf6ff' : off,
+        border: active ? 'rgba(99,230,255,.4)' : 'rgba(140,180,255,.18)',
+        go: () => this.setState({ cIdx: i })
+      };
+    });
+    const compareTabs = [['size', tx(U.compareTitle)], ['light', L === 'fr' ? '💡 Vitesse de la lumière' : '💡 Speed of light']].map(([id, label]) => {
+      const active = S.cTab === id;
+      return {
+        label, bg: active ? 'rgba(99,230,255,.16)' : 'transparent', fg: active ? '#eaf6ff' : off,
+        border: active ? 'rgba(99,230,255,.4)' : 'rgba(140,180,255,.18)', go: () => this.setState({ cTab: id })
+      };
+    });
+
+    const explainTabs = U.levelsExplain.map((x, i) => {
+      const active = S.ex === i;
+      return {
+        label: tx(x), bg: active ? 'rgba(99,230,255,.18)' : 'transparent', fg: active ? '#eaf6ff' : off,
+        border: active ? 'rgba(99,230,255,.4)' : 'rgba(140,180,255,.16)', go: () => this.setState({ ex: i })
+      };
+    });
+
+    const speeds = [['⏮', 0], ['×1', 1], ['×100', 100], ['×10 000', 10000]].map(([label, v]) => {
+      const active = S.time === v;
+      return {
+        label, bg: active ? 'rgba(99,230,255,.18)' : 'transparent', fg: active ? '#eaf6ff' : off,
+        go: () => { this.setState({ time: v }); this.stage('set', { timeScale: v }); }
+      };
+    });
+
+    const toggles = U.toggles.map((label, i) => {
+      const key = ['orbits', 'labels', 'trails', 'distances', 'scale'][i];
+      const v = S.toggles[key];
+      return {
+        label: tx(label), mark: v ? '☑' : '☐', color: v ? on : '#7c8db0',
+        go: () => { const tg = { ...S.toggles, [key]: !v }; this.setState({ toggles: tg }); this.stage('set', tg); }
+      };
+    });
+
+    const nav = U.nav.map((label, i) => {
+      const active = i === 0;
+      return {
+        label: tx(label), color: active ? '#fff' : '#93a6c9', line: active ? '#63e6ff' : 'transparent',
+        go: () => { if (i === 1) this.setState({ sel: null }); }
+      };
+    });
+
+    const travel = S.travel ? {
+      kicker: tx(U.destination), name: tx(S.travel.name), distance: tx(S.travel.distance), pct: S.travelPct + '%'
+    } : null;
+
+    const ultimate = S.ultimate ? { title: tx(U.ultimateTitle), text: tx(U.ultimateText) } : null;
+
+    const novaKey = S.nova;
+    const nova = S.novaOn && novaKey && D.NOVA[novaKey] && !S.travel && !S.free ? tx(D.NOVA[novaKey]) : null;
+
+    return {
+      t, inApp: S.screen === 'app', isLanding: S.screen === 'landing', chrome: S.screen === 'app' && !S.free,
+      free: S.free, card, hover, mission, levels, crumbs, tree, nav, speeds, toggles, explainTabs,
+      results, query: S.query, searchFooter: results.length ? tx(U.searchHint) : tx(U.noResult),
+      search: S.search, compare, comparePairs, compareTabs, lightTrips: D.LIGHT_TRIPS.map(x => ({ to: tx(x.to), time: tx(x.time), w: x.w + '%' })),
+      travel, toast: S.toast, limit: S.limit, intro: S.intro && !S.travel && !S.free, nova, ultimate,
+      showMission: S.screen === 'app' && !S.free && !S.search && !S.compare && !(S.novaOn && novaKey && D.NOVA[novaKey] && !S.travel),
+      showBottom: S.screen === 'app' && !S.free && !(S.intro && !S.travel),
+      showDisplay: S.display, audioIcon: S.audio ? '❚❚' : '▶', audioPct: S.audioPct + '%',
+      frBg: L === 'fr' ? 'rgba(99,230,255,.22)' : 'transparent', frFg: L === 'fr' ? '#eaf6ff' : off,
+      enBg: L === 'en' ? 'rgba(99,230,255,.22)' : 'transparent', enFg: L === 'en' ? '#eaf6ff' : off,
+      landingStats: [
+        { value: '8', label: L === 'fr' ? 'planètes' : 'planets' },
+        { value: '6', label: L === 'fr' ? 'échelles de voyage' : 'travel scales' },
+        { value: '∞', label: L === 'fr' ? 'à découvrir' : 'to discover' }
+      ],
+      toggleLang: () => this.setState({ lang: L === 'fr' ? 'en' : 'fr' }),
+      openSearch: () => this.setState({ search: true, query: '' }),
+      closeSearch: () => this.setState({ search: false }),
+      onQuery: e => this.setState({ query: e.target.value }),
+      stop: e => e.stopPropagation(),
+      openCompare: () => this.setState({ compare: true, display: false }),
+      closeCompare: () => this.setState({ compare: false }),
+      toggleDisplay: () => this.setState({ display: !S.display }),
+      closeCard: () => this.setState({ sel: null }),
+      toggleAudio: () => this.setState({ audio: !S.audio }),
+      nextMission: () => this.setState({ missionIdx: (S.missionIdx + 1) % D.MISSIONS.length }),
+      novaYes: () => { const bb = this.body(S.sel || 'earth'); this.setState({ nova: null, sel: bb ? bb.id : 'earth', ex: 1 }); },
+      novaLater: () => this.setState({ nova: null }),
+      enterFree: () => { this.setState({ free: true, sel: null, intro: false, search: false }); this.stage('goToState', 'free'); },
+      exitFree: () => this.setState({ free: false }),
+      startTour: () => { this.setState({ intro: false, view: 'solar', sel: null, nova: 'solar' }); this.stage('goToState', 'solar'); },
+      startEarth: () => {
+        this.setState({ screen: 'app', view: 'earth', sel: 'earth', intro: true, nova: 'earth' });
+        this.stage('set', { labels: S.toggles.labels }); this.stage('goToState', 'earth');
+      },
+      startUniverse: () => {
+        this.setState({ screen: 'app', view: 'universe', sel: 'cosmicweb', intro: false, nova: 'universe' });
+        this.stage('set', { labels: S.toggles.labels }); this.stage('goToState', 'universe');
+      },
+      goLanding: () => { this.setState({ screen: 'landing' }); this.stage('set', { labels: false }); this.stage('goToState', 'landing'); },
+      closeUltimate: () => this.setState({ ultimate: false }),
+      goHome: () => {
+        this.setState({ ultimate: false, view: 'earth', sel: 'earth', nova: 'earth', toast: { glyph: '🌍', text: tx(U.welcomeHome) } });
+        this.stage('goToState', 'earth');
+        clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: null }), 4200);
+      }
+    };
+  }
+}
+
+</script>
+</body>
+</html>
