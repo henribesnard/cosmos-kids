@@ -286,11 +286,13 @@ export const sceneCameraPresets: Readonly<Record<UniverseView, SceneCameraPreset
     maxDistance: 42,
   },
   constellations: {
-    position: [0, 0, 0.01],
-    target: [0, 0, 200],
+    // Observer at the centre of the celestial sphere, looking toward Orion.
+    // OrbitControls orbits around the origin so the camera only rotates.
+    position: [0.01, 0.005, 0],
+    target: [0, 0, 0],
     fov: 60,
     minDistance: 0,
-    maxDistance: 0,
+    maxDistance: 0.05,
   },
   solar: {
     position: [0, 43, 72],

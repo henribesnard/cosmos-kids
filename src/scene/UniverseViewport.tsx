@@ -762,7 +762,27 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
   const transition = useRef(false);
   const destination = useRef(new Vector3());
   const target = useRef(new Vector3());
+  const snapFrames = useRef(0);
   const preset = sceneCameraPresets[view];
+
+  /**
+   * Snap camera and flush OrbitControls internal damping state.
+   * Temporarily disabling damping causes `update()` to zero
+   * `sphericalDelta` and `panOffset` (instead of decaying them),
+   * preventing residual rotation from the previous view.
+   */
+  const snapCamera = useCallback(() => {
+    camera.position.copy(destination.current);
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(target.current);
+      const hadDamping = controlsRef.current.enableDamping;
+      controlsRef.current.enableDamping = false;
+      controlsRef.current.update();
+      controlsRef.current.enableDamping = hadDamping;
+    } else {
+      camera.lookAt(target.current.x, target.current.y, target.current.z);
+    }
+  }, [camera]);
 
   useEffect(() => {
     destination.current.set(...preset.position);
@@ -770,18 +790,32 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
     camera.fov = preset.fov;
     camera.updateProjectionMatrix();
 
-    if (reducedMotion) {
-      camera.position.copy(destination.current);
-      controlsRef.current?.target.copy(target.current);
-      controlsRef.current?.update();
+    // Constellation view requires an immediate snap: the camera teleports from
+    // a distant orbit to near-origin (inside the celestial sphere). A smooth
+    // lerp fights OrbitControls' tight maxDistance constraint and leaves the
+    // camera pointing at an arbitrary (often empty) sky region.
+    // We also repeat the snap for a few frames to override drei's own
+    // OrbitControls useFrame that may re-apply stale internal state.
+    if (reducedMotion || view === 'constellations') {
+      snapCamera();
       transition.current = false;
+      snapFrames.current = 4;
     } else {
       transition.current = true;
+      snapFrames.current = 0;
     }
     invalidate();
-  }, [camera, invalidate, preset, reducedMotion]);
+  }, [camera, invalidate, preset, reducedMotion, view, snapCamera]);
 
   useFrame((_, delta) => {
+    // Constellation / reduced-motion snap: force position for a few frames
+    // so that drei's own OrbitControls.update() cannot re-apply stale deltas.
+    if (snapFrames.current > 0) {
+      snapFrames.current--;
+      if (controlsRef.current) snapCamera();
+      return;
+    }
+
     if (!transition.current || !controlsRef.current) return;
     const factor = 1 - Math.exp(-delta * 3.8);
     camera.position.lerp(destination.current, factor);
@@ -810,7 +844,7 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
       enablePan={!isConstellationView}
       screenSpacePanning
       minDistance={preset.minDistance}
-      maxDistance={isConstellationView ? 0.02 : preset.maxDistance}
+      maxDistance={preset.maxDistance}
       minPolarAngle={0.03}
       maxPolarAngle={Math.PI - 0.06}
       onStart={() => {
