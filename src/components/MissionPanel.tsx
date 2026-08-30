@@ -28,7 +28,7 @@ export function MissionPanel({ locale, visited, open, onClose, onTravel }: Missi
   const percent = Math.round((complete / steps.length) * 100);
 
   return (
-    <aside className={`mission-panel glass-panel ${open ? 'is-open' : ''}`} aria-label={fr ? 'Mission en cours' : 'Current mission'}>
+    <aside className={`mission-panel glass-panel ${open ? 'is-open' : ''}`} data-scene-obstacle aria-label={fr ? 'Mission en cours' : 'Current mission'}>
       <div className="panel-heading">
         <div>
           <p className="panel-kicker"><Icon name="mission" size={15} /> {fr ? 'MISSION 01' : 'MISSION 01'}</p>
@@ -63,4 +63,3 @@ export function MissionPanel({ locale, visited, open, onClose, onTravel }: Missi
     </aside>
   );
 }
-

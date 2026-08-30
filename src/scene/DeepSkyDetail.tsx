@@ -1,4 +1,3 @@
-import { Html } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import {
@@ -9,11 +8,11 @@ import {
   Color,
   DoubleSide,
   Group,
-  Mesh,
   ShaderMaterial,
 } from 'three';
 import type { DeepSkyObjectId, Locale } from '../data/types';
 import { DEEP_SKY_BY_ID } from '../data/deepSkyObjects';
+import { createSeededRandom } from './galaxyCatalog';
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -112,17 +111,18 @@ function BlackHoleDetail({ reducedMotion }: { reducedMotion: boolean }) {
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const ringColor = new Color('#ffe8b0');
+    const random = createSeededRandom(8_801);
 
     for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.1;
-      const r = 2.3 + (Math.random() - 0.5) * 0.3;
+      const angle = (i / count) * Math.PI * 2 + (random() - 0.5) * 0.1;
+      const r = 2.3 + (random() - 0.5) * 0.3;
       positions[i * 3] = Math.cos(angle) * r;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 0.15;
+      positions[i * 3 + 1] = (random() - 0.5) * 0.15;
       positions[i * 3 + 2] = Math.sin(angle) * r;
       colors[i * 3] = ringColor.r;
       colors[i * 3 + 1] = ringColor.g;
       colors[i * 3 + 2] = ringColor.b;
-      sizes[i] = 0.5 + Math.random() * 0.8;
+      sizes[i] = 0.5 + random() * 0.8;
     }
 
     const geo = new BufferGeometry();
@@ -245,25 +245,27 @@ function NebulaDetail({
     const brightColor = new Color(color).lerp(new Color('#ffffff'), 0.5);
     const darkColor = new Color(color).lerp(new Color('#200810'), 0.6);
     const tmpC = new Color();
+    const seed = [...color].reduce((value, character) => value + character.charCodeAt(0), 12_001);
+    const random = createSeededRandom(seed);
 
     for (let i = 0; i < count; i++) {
       // Irregular cloud shape using multiple overlapping Gaussians
-      const cx = (Math.random() - 0.5) * 2;
-      const cy = (Math.random() - 0.5) * 1.5;
-      const cz = (Math.random() - 0.5) * 2;
+      const cx = (random() - 0.5) * 2;
+      const cy = (random() - 0.5) * 1.5;
+      const cz = (random() - 0.5) * 2;
       const r = Math.sqrt(cx * cx + cy * cy + cz * cz);
 
       // Gaussian falloff with filamentary structure
       const filament = Math.sin(cx * 3 + cy * 2) * Math.cos(cz * 2.5 + cx) * 0.5 + 0.5;
       const density = Math.exp(-r * r * 1.5) * (0.5 + filament * 0.5);
 
-      if (density < Math.random() * 0.3) {
+      if (density < random() * 0.3) {
         // Redistribute to create wisps
-        const angle = Math.random() * Math.PI * 2;
-        const spread = Math.random() * 8;
-        positions[i * 3] = Math.cos(angle) * spread + (Math.random() - 0.5) * 3;
-        positions[i * 3 + 1] = (Math.random() - 0.5) * 5;
-        positions[i * 3 + 2] = Math.sin(angle) * spread + (Math.random() - 0.5) * 3;
+        const angle = random() * Math.PI * 2;
+        const spread = random() * 8;
+        positions[i * 3] = Math.cos(angle) * spread + (random() - 0.5) * 3;
+        positions[i * 3 + 1] = (random() - 0.5) * 5;
+        positions[i * 3 + 2] = Math.sin(angle) * spread + (random() - 0.5) * 3;
       } else {
         positions[i * 3] = cx * 6;
         positions[i * 3 + 1] = cy * 5;
@@ -271,15 +273,15 @@ function NebulaDetail({
       }
 
       // Colour variation
-      const rnd = Math.random();
+      const rnd = random();
       if (rnd > 0.85) tmpC.copy(brightColor);
-      else if (rnd > 0.3) tmpC.copy(baseColor).lerp(brightColor, Math.random() * 0.3);
-      else tmpC.copy(darkColor).lerp(baseColor, Math.random() * 0.5);
+      else if (rnd > 0.3) tmpC.copy(baseColor).lerp(brightColor, random() * 0.3);
+      else tmpC.copy(darkColor).lerp(baseColor, random() * 0.5);
 
       colors[i * 3] = tmpC.r;
       colors[i * 3 + 1] = tmpC.g;
       colors[i * 3 + 2] = tmpC.b;
-      sizes[i] = 1.0 + Math.random() * 3.0 + density * 2.0;
+      sizes[i] = 1.0 + random() * 3.0 + density * 2.0;
     }
 
     const geo = new BufferGeometry();
@@ -338,11 +340,66 @@ function NebulaDetail({
 /*  Galaxy detail view (spiral particle system)                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Galaxy rendering profiles.
+ * Andromeda (M31): large grand-design spiral — prominent bulge, tight arms.
+ * Triangulum (M33): smaller, diffuse flocculent spiral — weak bulge, loose arms.
+ */
+interface GalaxyProfile {
+  particleCount: number;
+  armCount: number;
+  coreFraction: number;
+  coreSpread: [number, number, number];
+  pitchDeg: number;
+  armWind: number;
+  armSpread: number;
+  maxRadius: number;
+  diskHeight: number;
+  tilt: [number, number, number];
+  coreGlowRadius: number;
+  coreGlowOpacity: number;
+}
+
+const GALAXY_PROFILES: { [key: string]: GalaxyProfile | undefined } = {
+  andromeda: {
+    particleCount: 22_000,
+    armCount: 2,
+    coreFraction: 0.35,
+    coreSpread: [2.5, 0.7, 2.0],
+    pitchDeg: 11,
+    armWind: 5.0,
+    armSpread: 0.6,
+    maxRadius: 9,
+    diskHeight: 0.12,
+    tilt: [1.2, 0, 0.15],
+    coreGlowRadius: 1.2,
+    coreGlowOpacity: 0.35,
+  },
+  triangulum: {
+    particleCount: 8_000,
+    armCount: 3,
+    coreFraction: 0.15,
+    coreSpread: [1.2, 0.3, 1.0],
+    pitchDeg: 17,
+    armWind: 3.5,
+    armSpread: 1.4,
+    maxRadius: 6,
+    diskHeight: 0.25,
+    tilt: [0.4, 0, 0.5],
+    coreGlowRadius: 0.5,
+    coreGlowOpacity: 0.18,
+  },
+};
+
+const DEFAULT_GALAXY_PROFILE: GalaxyProfile = GALAXY_PROFILES.andromeda!;
+
 function GalaxyMiniDetail({
   color,
+  objectId,
   reducedMotion,
 }: {
   color: string;
+  objectId: DeepSkyObjectId;
   reducedMotion: boolean;
 }) {
   const groupRef = useRef<Group>(null);
@@ -352,8 +409,10 @@ function GalaxyMiniDetail({
     groupRef.current.rotation.y += delta * 0.03;
   });
 
+  const profile: GalaxyProfile = GALAXY_PROFILES[objectId] ?? DEFAULT_GALAXY_PROFILE;
+
   const { geometry, material } = useMemo(() => {
-    const count = 15_000;
+    const count = profile.particleCount;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
@@ -361,35 +420,39 @@ function GalaxyMiniDetail({
     const armColor = new Color(color).lerp(new Color('#a0c0ff'), 0.4);
     const coreColor = new Color(color).lerp(new Color('#ffe0a0'), 0.5);
     const tmpC = new Color();
+    const seed = [...objectId].reduce((value, character) => value + character.charCodeAt(0), 22_003);
+    const random = createSeededRandom(seed);
+
+    const coreEnd = Math.floor(count * profile.coreFraction);
+    const pitchTan = Math.tan(profile.pitchDeg * Math.PI / 180);
 
     for (let i = 0; i < count; i++) {
-      const t = i / count;
-      if (t < 0.3) {
-        // Core region — dense ellipsoid
-        const bx = (Math.random() - 0.5 + Math.random() - 0.5) * 2;
-        const bz = (Math.random() - 0.5 + Math.random() - 0.5) * 1.5;
-        const by = (Math.random() - 0.5 + Math.random() - 0.5) * 0.6;
+      if (i < coreEnd) {
+        // Core / bulge region
+        const bx = (random() - 0.5 + random() - 0.5) * profile.coreSpread[0];
+        const by = (random() - 0.5 + random() - 0.5) * profile.coreSpread[1];
+        const bz = (random() - 0.5 + random() - 0.5) * profile.coreSpread[2];
         positions[i * 3] = bx;
         positions[i * 3 + 1] = by;
         positions[i * 3 + 2] = bz;
         tmpC.copy(coreColor);
-        sizes[i] = 0.6 + Math.random() * 1.0;
+        sizes[i] = 0.6 + random() * 1.0;
       } else {
-        // Spiral arms (2 arms)
-        const armIndex = Math.random() > 0.5 ? 0 : 1;
-        const theta = armIndex * Math.PI + t * 4.5;
-        const r = 0.5 + t * 7;
-        const pitch = Math.tan(12 * Math.PI / 180);
-        const rSpiral = 0.5 * Math.exp((theta - armIndex * Math.PI) * pitch);
-        const rClamped = Math.min(rSpiral, 8);
-        const spread = (Math.random() - 0.5) * 0.8;
+        // Spiral arm particles
+        const t = (i - coreEnd) / (count - coreEnd);
+        const armIndex = Math.floor(random() * profile.armCount);
+        const armOffset = (armIndex / profile.armCount) * Math.PI * 2;
+        const theta = armOffset + t * profile.armWind;
+        const rSpiral = 0.5 * Math.exp((theta - armOffset) * pitchTan);
+        const rClamped = Math.min(rSpiral, profile.maxRadius);
+        const spread = (random() - 0.5) * profile.armSpread;
         const perpAngle = theta + Math.PI / 2;
 
         positions[i * 3] = Math.cos(theta) * rClamped + Math.cos(perpAngle) * spread;
-        positions[i * 3 + 1] = (Math.random() - 0.5) * 0.15;
+        positions[i * 3 + 1] = (random() - 0.5) * profile.diskHeight;
         positions[i * 3 + 2] = Math.sin(theta) * rClamped + Math.sin(perpAngle) * spread;
-        tmpC.copy(armColor).lerp(baseColor, Math.random() * 0.5);
-        sizes[i] = 0.4 + Math.random() * 0.8;
+        tmpC.copy(armColor).lerp(baseColor, random() * 0.5);
+        sizes[i] = 0.4 + random() * 0.8;
       }
 
       colors[i * 3] = tmpC.r;
@@ -430,17 +493,17 @@ function GalaxyMiniDetail({
     });
 
     return { geometry: geo, material: mat };
-  }, [color]);
+  }, [color, objectId, profile]);
 
   return (
-    <group ref={groupRef} rotation={[0.5, 0, 0.2]}>
+    <group ref={groupRef} rotation={profile.tilt}>
       <points geometry={geometry} material={material} />
       <mesh>
-        <sphereGeometry args={[0.8, 24, 24]} />
+        <sphereGeometry args={[profile.coreGlowRadius, 24, 24]} />
         <meshBasicMaterial
           color={new Color(color).lerp(new Color('#ffe0a0'), 0.4)}
           transparent
-          opacity={0.3}
+          opacity={profile.coreGlowOpacity}
           depthWrite={false}
         />
       </mesh>
@@ -475,28 +538,30 @@ function ClusterDetail({
     const sizes = new Float32Array(count);
     const baseColor = new Color(color);
     const tmpC = new Color();
+    const seed = [...`${kind}:${color}`].reduce((value, character) => value + character.charCodeAt(0), 33_007);
+    const random = createSeededRandom(seed);
 
     for (let i = 0; i < count; i++) {
       if (kind === 'globular-cluster') {
         // Dense spherical distribution (King model approximation)
-        const rRaw = Math.pow(Math.random(), 0.35) * 5;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const theta = Math.random() * Math.PI * 2;
+        const rRaw = Math.pow(random(), 0.35) * 5;
+        const phi = Math.acos(2 * random() - 1);
+        const theta = random() * Math.PI * 2;
         positions[i * 3] = rRaw * Math.sin(phi) * Math.cos(theta);
         positions[i * 3 + 1] = rRaw * Math.cos(phi);
         positions[i * 3 + 2] = rRaw * Math.sin(phi) * Math.sin(theta);
       } else {
         // Loose open cluster
-        const rRaw = Math.pow(Math.random(), 0.5) * 6;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const theta = Math.random() * Math.PI * 2;
+        const rRaw = Math.pow(random(), 0.5) * 6;
+        const phi = Math.acos(2 * random() - 1);
+        const theta = random() * Math.PI * 2;
         positions[i * 3] = rRaw * Math.sin(phi) * Math.cos(theta);
         positions[i * 3 + 1] = rRaw * Math.cos(phi) * 0.4;
         positions[i * 3 + 2] = rRaw * Math.sin(phi) * Math.sin(theta);
       }
 
       // Star colour variation
-      const rnd = Math.random();
+      const rnd = random();
       if (rnd > 0.9) tmpC.set('#a0c0ff');       // blue
       else if (rnd > 0.7) tmpC.set('#fff8e0');   // white-yellow
       else if (rnd > 0.4) tmpC.copy(baseColor);
@@ -505,7 +570,7 @@ function ClusterDetail({
       colors[i * 3] = tmpC.r;
       colors[i * 3 + 1] = tmpC.g;
       colors[i * 3 + 2] = tmpC.b;
-      sizes[i] = 0.4 + Math.random() * 1.0;
+      sizes[i] = 0.4 + random() * 1.0;
     }
 
     const geo = new BufferGeometry();
@@ -556,8 +621,6 @@ function ClusterDetail({
 
 export function DeepSkyDetail({
   objectId,
-  locale,
-  showLabels,
   reducedMotion,
 }: DeepSkyDetailProps) {
   const obj = DEEP_SKY_BY_ID[objectId];
@@ -572,7 +635,7 @@ export function DeepSkyDetail({
         <NebulaDetail color={obj.color} reducedMotion={reducedMotion} />
       )}
       {obj.kind === 'galaxy' && (
-        <GalaxyMiniDetail color={obj.color} reducedMotion={reducedMotion} />
+        <GalaxyMiniDetail color={obj.color} objectId={objectId} reducedMotion={reducedMotion} />
       )}
       {(obj.kind === 'globular-cluster' || obj.kind === 'open-cluster') && (
         <ClusterDetail

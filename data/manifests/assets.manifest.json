@@ -1,12 +1,18 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-28",
+  "updatedAt": "2026-08-30",
   "packs": [
     {
       "id": "solar-system-scope-2k",
       "manifestUrl": "/assets/textures/solar-system/sss-2k/manifest.json",
       "attributionUrl": "/assets/textures/solar-system/sss-2k/ATTRIBUTION.md",
       "license": "CC-BY-4.0"
+    },
+    {
+      "id": "esa-gaia-milky-way-2025",
+      "manifestUrl": "/assets/textures/milky-way/esa-gaia-2025/manifest.json",
+      "attributionUrl": "/assets/textures/milky-way/esa-gaia-2025/ATTRIBUTION.md",
+      "license": "CC-BY-SA-3.0-IGO"
     }
   ],
   "assets": [
@@ -25,6 +31,7 @@
     { "id": "saturn-color", "body": "saturn", "role": "color", "url": "/assets/textures/solar-system/sss-2k/saturn-color.jpg", "sha256": "54a900ca9bf7ab62e70f862852759abdf342e6d6436a95a2fe9ebdb6bcd3bbac", "colorSpace": "srgb" },
     { "id": "saturn-rings-rgba", "body": "saturn", "role": "rings-radial-rgba", "url": "/assets/textures/solar-system/sss-2k/saturn-rings-rgba.png", "sha256": "4b0644b2f3ef259fd0bfaedd9dc52f9e7d9738f65f50363e8c4dd19f650d7334", "colorSpace": "srgb" },
     { "id": "uranus-color", "body": "uranus", "role": "color", "url": "/assets/textures/solar-system/sss-2k/uranus-color.jpg", "sha256": "d15239d46f82d3ea13d2b260b5b29b2a382f42f2916dae0694d0387b1204a09d", "colorSpace": "srgb" },
-    { "id": "neptune-color", "body": "neptune", "role": "color", "url": "/assets/textures/solar-system/sss-2k/neptune-color.jpg", "sha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6", "colorSpace": "srgb" }
+    { "id": "neptune-color", "body": "neptune", "role": "color", "url": "/assets/textures/solar-system/sss-2k/neptune-color.jpg", "sha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6", "colorSpace": "srgb" },
+    { "id": "milky-way-gaia-face-on-reference", "body": "milky-way", "role": "artist-impression-face-on-reference", "url": "/assets/textures/milky-way/esa-gaia-2025/gaia-milky-way-face-on.jpg", "sha256": "27335a98042e8e6da005e82f2dec14f236ae7d23cda9f218354f24b3fc1fd627", "colorSpace": "srgb" }
   ]
 }

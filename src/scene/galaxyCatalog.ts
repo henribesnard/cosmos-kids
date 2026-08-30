@@ -1,164 +1,367 @@
 /**
- * Render catalogue for the Milky Way galaxy and Local Group views.
+ * Scientific reconstruction parameters for the Milky Way and Local Group.
  *
- * All distances are in normalised galaxy units where 1.0 = galactic disk
- * radius (~50 000 ly). Spiral arms follow logarithmic spirals:
- *   r(θ) = r₀ · exp(θ · tan(pitch))
+ * A face-on image of the Milky Way cannot be a photograph: we observe the
+ * Galaxy from inside its disk. The runtime therefore keeps two layers apart:
  *
- * Sources:
- *  - Reid et al. 2019 (BeSSeL) — spiral arm geometry
- *  - Bland-Hawthorn & Gerhard 2016 (ARA&A) — overall structure
- *  - GRAVITY Collaboration 2019 — Sun-center distance
- *  - Vallée 2015 — pitch angles
+ *  - appearance: ESA/Gaia/DPAC 2025 artist's impression;
+ *  - geometry: a simplified, educational reconstruction informed by the
+ *    maser spiral-arm model of Reid et al. (2019).
+ *
+ * The arm curves are deliberately smooth visual guides. They do not claim to
+ * reproduce every kink or uncertain continuation in Reid et al. Table 2.
  */
 
 import type { DeepSkyObjectId, LocalizedText } from '../data/types';
 
+export const MILKY_WAY_SOURCES = {
+  appearance: {
+    label: 'ESA/Gaia/DPAC 2025 — artist’s impression',
+    url: 'https://www.esa.int/ESA_Multimedia/Images/2025/01/The_best_Milky_Way_map_by_Gaia',
+  },
+  spiralGeometry: {
+    label: 'Reid et al. 2019 — BeSSeL maser parallaxes, Table 2',
+    url: 'https://doi.org/10.3847/1538-4357/ab4a11',
+  },
+  centralBar: {
+    label: 'Wegg, Gerhard & Portail 2015',
+    url: 'https://doi.org/10.1093/mnras/stv745',
+  },
+  objectDirections: {
+    label: 'CDS/SIMBAD astronomical database',
+    url: 'https://simbad.cds.unistra.fr/simbad/',
+  },
+} as const;
+
 /* ------------------------------------------------------------------ */
-/*  Milky Way structural constants                                    */
+/*  Milky Way reference frame                                         */
 /* ------------------------------------------------------------------ */
 
-/** Physical radius of the Milky Way disk in light-years. */
+export const LIGHT_YEARS_PER_KPC = 3_261.56;
+
+/** Educational visible-disk radius (about 15.3 kpc / 50,000 ly). */
 export const MW_DISK_RADIUS_LY = 50_000;
+export const MW_DISK_RADIUS_KPC = MW_DISK_RADIUS_LY / LIGHT_YEARS_PER_KPC;
 
-/** Sun's distance from galactic centre, normalised (26 700 / 50 000). */
-export const SUN_GALACTIC_R = 0.534;
+/** Reid et al. (2019): R0 = 8.15 ± 0.15 kpc. */
+export const SUN_GALACTIC_DISTANCE_KPC = 8.15;
+export const SUN_GALACTIC_R = SUN_GALACTIC_DISTANCE_KPC / MW_DISK_RADIUS_KPC;
 
-/** Number of scene units for the galaxy disk radius. */
+/** Number of Three.js scene units used for the visible disk radius. */
 export const MW_SCENE_RADIUS = 80;
 
-/** Disk thickness relative to radius (thin disk visual). */
+/** Thin-disk visual thickness; intentionally enlarged enough to remain visible. */
 export const MW_DISK_THICKNESS_RATIO = 0.012;
 
 /* ------------------------------------------------------------------ */
-/*  Spiral arm definitions                                            */
+/*  Spiral arm reconstruction                                         */
 /* ------------------------------------------------------------------ */
+
+export type SpiralArmRole = 'major-stellar' | 'star-forming' | 'local';
 
 export interface SpiralArmDef {
   id: string;
   name: LocalizedText;
-  /** Pitch angle in degrees. */
+  role: SpiralArmRole;
+  /** Representative pitch angle in degrees. */
   pitchDeg: number;
-  /** Starting azimuth in radians (0 = Sun–Centre line, CCW from North Galactic Pole). */
+  /** Starting azimuth in radians; 0 points from the centre toward the Sun. */
   startAzimuth: number;
-  /** Galactocentric radius where the arm begins (normalised to disk). */
+  /** Starting radius, normalised to the visible disk radius. */
   startRadius: number;
-  /** Winding range in radians (how far the arm extends). */
+  /** Angular range of this smooth educational guide. */
   windRange: number;
-  /** Base colour for the arm's young stellar population. */
+  /** Observed 1-sigma arm width around the solar neighbourhood, in kpc. */
+  widthKpc: number;
   color: string;
-  /** HII / nebula tint overlaid on the arm ridge. */
   nebulaColor: string;
+  /** Stable anchor along the curve for the screen-space label. */
+  labelT: number;
+  labelPriority: number;
 }
 
+/**
+ * The four long guides reach the outer disk instead of stopping inside the
+ * solar circle. Their pitch angles remain close to Reid et al. (2019), while
+ * their unobserved continuations are explicitly treated as visual inference.
+ *
+ * Scutum–Centaurus and Perseus are emphasised as the two strongest old-star
+ * arms in the NASA/Spitzer interpretation. Sagittarius–Carina and
+ * Norma–Outer remain visible as star-forming/gas-rich arms, consistent with
+ * the four-arm maser reconstruction. The Local/Orion arm is a short segment.
+ */
 export const SPIRAL_ARMS: readonly SpiralArmDef[] = [
   {
     id: 'scutum-centaurus',
-    name: { fr: 'Écu-Centaure', en: 'Scutum-Centaurus' },
+    name: { fr: 'Écu–Centaure', en: 'Scutum–Centaurus' },
+    role: 'major-stellar',
     pitchDeg: 12.8,
-    startAzimuth: 0.47,   // ~27°
-    startRadius: 0.07,
-    windRange: 5.6,
-    color: '#a0c8ff',
-    nebulaColor: '#ff6888',
+    startAzimuth: 0.52,
+    startRadius: 0.31,
+    windRange: 5.25,
+    widthKpc: 0.23,
+    color: '#86a9d7',
+    nebulaColor: '#d26a7c',
+    labelT: 0.62,
+    labelPriority: 82,
   },
   {
     id: 'perseus',
     name: { fr: 'Persée', en: 'Perseus' },
+    role: 'major-stellar',
     pitchDeg: 9.4,
-    startAzimuth: 3.61,   // ~207°
-    startRadius: 0.07,
-    windRange: 5.6,
-    color: '#90b8ff',
-    nebulaColor: '#ff5070',
+    startAzimuth: 0.52 + Math.PI,
+    startRadius: 0.3,
+    windRange: 7.3,
+    widthKpc: 0.35,
+    color: '#7d9cca',
+    nebulaColor: '#c85b75',
+    labelT: 0.68,
+    labelPriority: 83,
   },
   {
     id: 'sagittarius-carina',
-    name: { fr: 'Sagittaire-Carène', en: 'Sagittarius-Carina' },
+    name: { fr: 'Sagittaire–Carène', en: 'Sagittarius–Carina' },
+    role: 'star-forming',
     pitchDeg: 11.1,
-    startAzimuth: 1.36,   // ~78°
-    startRadius: 0.07,
-    windRange: 5.2,
-    color: '#b0d0ff',
-    nebulaColor: '#ff7090',
+    startAzimuth: 2.09,
+    startRadius: 0.36,
+    windRange: 5.25,
+    widthKpc: 0.27,
+    color: '#748db6',
+    nebulaColor: '#c66b82',
+    labelT: 0.66,
+    labelPriority: 78,
   },
   {
-    id: 'norma',
-    name: { fr: 'Norma', en: 'Norma' },
-    pitchDeg: 11.0,
-    startAzimuth: 4.50,   // ~258°
-    startRadius: 0.07,
-    windRange: 5.2,
-    color: '#a0c0ff',
-    nebulaColor: '#ff6080',
+    id: 'norma-outer',
+    name: { fr: 'Norma–Externe', en: 'Norma–Outer' },
+    role: 'star-forming',
+    pitchDeg: 11,
+    startAzimuth: 5.24,
+    startRadius: 0.29,
+    windRange: 6.5,
+    widthKpc: 0.32,
+    color: '#6f89ae',
+    nebulaColor: '#bd6079',
+    labelT: 0.72,
+    labelPriority: 77,
   },
   {
-    id: 'orion-spur',
-    name: { fr: 'Éperon d\u2019Orion', en: 'Orion Spur' },
-    pitchDeg: 10.1,
-    startAzimuth: 2.79,   // ~160° — between Sagittarius and Perseus
-    startRadius: 0.38,
-    windRange: 1.8,        // shorter spur
-    color: '#c0d8ff',
-    nebulaColor: '#ff90a0',
+    id: 'local-orion',
+    name: { fr: 'Bras local (Orion)', en: 'Local (Orion) Arm' },
+    role: 'local',
+    pitchDeg: 11.4,
+    // This curve crosses r ≈ R0 at azimuth 0, so the Sun sits on it.
+    startAzimuth: -0.5,
+    startRadius: 0.48,
+    windRange: 1.25,
+    widthKpc: 0.31,
+    color: '#70c7d8',
+    nebulaColor: '#d98c9d',
+    labelT: 0.35,
+    labelPriority: 88,
   },
 ];
 
+/** Point on an arm centreline. The disk lies in the XZ plane. */
+export function spiralPointAt(
+  arm: SpiralArmDef,
+  t: number,
+  sceneRadius = MW_SCENE_RADIUS,
+): readonly [number, number, number] {
+  const clampedT = Math.min(1, Math.max(0, t));
+  const pitch = (arm.pitchDeg * Math.PI) / 180;
+  const theta = arm.startAzimuth + clampedT * arm.windRange;
+  const radius = arm.startRadius * Math.exp(clampedT * arm.windRange * Math.tan(pitch));
+
+  // theta = 0 is the Sun–centre line (+Z); increasing theta turns toward +X.
+  return [
+    Math.sin(theta) * radius * sceneRadius,
+    0,
+    Math.cos(theta) * radius * sceneRadius,
+  ];
+}
+
+function hashString(value: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+}
+
+/** Small deterministic PRNG used to keep procedural renders reproducible. */
+export function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+function gaussian(random: () => number): number {
+  const u = Math.max(1e-7, random());
+  const v = Math.max(1e-7, random());
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/** Deterministic density band around a logarithmic arm centreline. */
+export function generateSpiralPoints(
+  arm: SpiralArmDef,
+  sceneRadius: number,
+  count: number,
+): Float32Array {
+  const positions = new Float32Array(count * 3);
+  const random = createSeededRandom(hashString(`cosmos-kids:${arm.id}`));
+  const widthNormalised = arm.widthKpc / MW_DISK_RADIUS_KPC;
+
+  for (let index = 0; index < count; index += 1) {
+    const t = Math.min(1, (index + random() * 0.8) / count);
+    const pitch = (arm.pitchDeg * Math.PI) / 180;
+    const theta = arm.startAzimuth + t * arm.windRange;
+    const radius = arm.startRadius * Math.exp(t * arm.windRange * Math.tan(pitch));
+    const scatter = gaussian(random) * widthNormalised * (0.7 + radius * 0.65);
+    const vertical = gaussian(random) * MW_DISK_THICKNESS_RATIO * (1.15 - radius * 0.35);
+    const perpendicular = theta + Math.PI / 2;
+
+    positions[index * 3] =
+      (Math.sin(theta) * radius + Math.sin(perpendicular) * scatter) * sceneRadius;
+    positions[index * 3 + 1] = vertical * sceneRadius;
+    positions[index * 3 + 2] =
+      (Math.cos(theta) * radius + Math.cos(perpendicular) * scatter) * sceneRadius;
+  }
+
+  return positions;
+}
+
 /* ------------------------------------------------------------------ */
-/*  Deep-sky object positions in the galaxy (normalised coordinates)   */
+/*  Deep-sky positions                                                */
 /* ------------------------------------------------------------------ */
 
 export interface GalaxyObjectPosition {
   id: DeepSkyObjectId;
-  /** Galactocentric radius, normalised (0 = centre, 1 = edge). */
-  r: number;
-  /** Galactic azimuth in radians from the Sun–Centre line. */
-  theta: number;
-  /** Vertical offset from the midplane (normalised). */
-  z: number;
+  /** IAU Galactic longitude and latitude, in degrees. */
+  galacticLongitudeDeg: number;
+  galacticLatitudeDeg: number;
+  /** Heliocentric distance used by the rendered marker. */
+  distanceLy: number;
+  coordinateSourceUrl: string;
 }
 
+const SIMBAD = 'https://simbad.cds.unistra.fr/simbad/sim-id?Ident=';
+
 /**
- * Approximate positions of deep-sky objects within the Milky Way.
- * These are educational approximations, not precise astrometric values.
+ * Directions are from SIMBAD and distances match the educational catalogue.
+ * This keeps each marker's rendered distance from the Sun internally
+ * consistent. Arm membership remains an approximation because distances and
+ * Milky Way arm boundaries have significant uncertainties.
  */
 export const GALAXY_OBJECT_POSITIONS: readonly GalaxyObjectPosition[] = [
-  // Sgr A* — at the galactic centre
-  { id: 'sgr-a', r: 0, theta: 0, z: 0 },
-  // Orion Nebula — in the Orion Spur, near the Sun
-  { id: 'orion-nebula', r: 0.507, theta: 3.14, z: 0 },
-  // Eagle Nebula — on the Sagittarius-Carina arm
-  { id: 'eagle-nebula', r: 0.42, theta: 2.53, z: 0 },
-  // Crab Nebula — in the Perseus arm region
-  { id: 'crab-nebula', r: 0.60, theta: 3.49, z: 0 },
-  // Carina Nebula — on the Sagittarius-Carina arm
-  { id: 'carina-nebula', r: 0.39, theta: 1.92, z: 0 },
-  // Ring Nebula — in the Orion Spur, near the Sun
-  { id: 'ring-nebula', r: 0.51, theta: 3.05, z: 0 },
-  // Horsehead Nebula — in the Orion Spur
-  { id: 'horsehead-nebula', r: 0.507, theta: 3.16, z: 0 },
-  // Omega Centauri — in the halo, below the disk
-  { id: 'omega-centauri', r: 0.34, theta: 2.09, z: -0.02 },
-  // Pleiades — very close to the Sun
-  { id: 'pleiades', r: 0.525, theta: 3.05, z: 0.002 },
+  {
+    id: 'sgr-a',
+    galacticLongitudeDeg: 0,
+    galacticLatitudeDeg: 0,
+    distanceLy: SUN_GALACTIC_DISTANCE_KPC * LIGHT_YEARS_PER_KPC,
+    coordinateSourceUrl: `${SIMBAD}Sgr+A*`,
+  },
+  {
+    id: 'orion-nebula',
+    galacticLongitudeDeg: 209.01,
+    galacticLatitudeDeg: -19.38,
+    distanceLy: 1_344,
+    coordinateSourceUrl: `${SIMBAD}M+42`,
+  },
+  {
+    id: 'eagle-nebula',
+    galacticLongitudeDeg: 16.95,
+    galacticLatitudeDeg: 0.79,
+    distanceLy: 5_700,
+    coordinateSourceUrl: `${SIMBAD}M+16`,
+  },
+  {
+    id: 'crab-nebula',
+    galacticLongitudeDeg: 184.56,
+    galacticLatitudeDeg: -5.78,
+    distanceLy: 6_500,
+    coordinateSourceUrl: `${SIMBAD}M+1`,
+  },
+  {
+    id: 'carina-nebula',
+    galacticLongitudeDeg: 287.6,
+    galacticLatitudeDeg: -0.63,
+    distanceLy: 7_500,
+    coordinateSourceUrl: `${SIMBAD}NGC+3372`,
+  },
+  {
+    id: 'ring-nebula',
+    galacticLongitudeDeg: 63.17,
+    galacticLatitudeDeg: 13.98,
+    distanceLy: 2_300,
+    coordinateSourceUrl: `${SIMBAD}M+57`,
+  },
+  {
+    id: 'horsehead-nebula',
+    galacticLongitudeDeg: 206.85,
+    galacticLatitudeDeg: -16.96,
+    distanceLy: 1_350,
+    coordinateSourceUrl: `${SIMBAD}Barnard+33`,
+  },
+  {
+    id: 'omega-centauri',
+    galacticLongitudeDeg: 309.1,
+    galacticLatitudeDeg: 14.97,
+    distanceLy: 17_000,
+    coordinateSourceUrl: `${SIMBAD}NGC+5139`,
+  },
+  {
+    id: 'pleiades',
+    galacticLongitudeDeg: 166.57,
+    galacticLatitudeDeg: -23.52,
+    distanceLy: 444,
+    coordinateSourceUrl: `${SIMBAD}M+45`,
+  },
 ];
 
+/** Convert heliocentric Galactic coordinates into the scene's X/Y/Z frame. */
+export function galaxyObjectScenePosition(
+  object: GalaxyObjectPosition,
+  sceneRadius = MW_SCENE_RADIUS,
+): readonly [number, number, number] {
+  const longitude = (object.galacticLongitudeDeg * Math.PI) / 180;
+  const latitude = (object.galacticLatitudeDeg * Math.PI) / 180;
+  const distance = object.distanceLy / MW_DISK_RADIUS_LY;
+  const planarDistance = distance * Math.cos(latitude);
+
+  return [
+    Math.sin(longitude) * planarDistance * sceneRadius,
+    Math.sin(latitude) * distance * sceneRadius,
+    (SUN_GALACTIC_R - Math.cos(longitude) * planarDistance) * sceneRadius,
+  ];
+}
+
+export const SUN_SCENE_POSITION = [
+  0,
+  0,
+  SUN_GALACTIC_R * MW_SCENE_RADIUS,
+] as const;
+
 /* ------------------------------------------------------------------ */
-/*  Local Group galaxy definitions                                    */
+/*  Local Group                                                      */
 /* ------------------------------------------------------------------ */
 
 export interface LocalGroupGalaxyDef {
   id: DeepSkyObjectId | 'milkyway';
   name: LocalizedText;
-  /** Distance from the Milky Way centre in light-years. */
   distanceLy: number;
-  /** Apparent diameter in light-years. */
   diameterLy: number;
-  /** 3D position relative to the Milky Way, in normalised units
-   *  (1 unit = 1 million light-years). */
+  /** 1 scene unit = 1 million light-years. */
   position: readonly [number, number, number];
   color: string;
-  /** Visual scale factor for rendering. */
   sceneScale: number;
 }
 
@@ -170,7 +373,7 @@ export const LOCAL_GROUP_GALAXIES: readonly LocalGroupGalaxyDef[] = [
     diameterLy: 100_000,
     position: [0, 0, 0],
     color: '#ffe8a0',
-    sceneScale: 1.0,
+    sceneScale: 1,
   },
   {
     id: 'andromeda',
@@ -210,70 +413,14 @@ export const LOCAL_GROUP_GALAXIES: readonly LocalGroupGalaxyDef[] = [
   },
 ];
 
-/* ------------------------------------------------------------------ */
-/*  Galactic bulge / core visual parameters                           */
-/* ------------------------------------------------------------------ */
-
 export const GALACTIC_CORE = {
-  /** Bulge semi-major axis as fraction of disk radius (bar direction). */
-  bulgeRadiusMajor: 0.20,
-  /** Bulge semi-minor axis (perpendicular to bar in disk plane). */
-  bulgeRadiusMinor: 0.09,
-  /** Bulge height above/below the plane. */
-  bulgeHeight: 0.08,
-  /** Bar rotation relative to Sun-Centre line (radians, ~27°). */
-  barAngle: 0.47,
-  /** Core colours. */
-  coreColor: '#ffcc60',
-  barColor: '#ff9920',
+  bulgeRadiusMajor: 0.23,
+  bulgeRadiusMinor: 0.1,
+  bulgeHeight: 0.06,
+  /** Wegg et al. (2015): long-bar half length 5.0 ± 0.2 kpc. */
+  barHalfLength: 5 / MW_DISK_RADIUS_KPC,
+  /** Representative 30° angle inside the published 28–33° interval. */
+  barAngle: Math.PI / 6,
+  coreColor: '#f2c58d',
+  barColor: '#b77b55',
 } as const;
-
-/* ------------------------------------------------------------------ */
-/*  Utility: compute logarithmic spiral points                        */
-/* ------------------------------------------------------------------ */
-
-/**
- * Generate points along a logarithmic spiral arm.
- * Returns an array of [x, y, z] positions in scene units.
- */
-export function generateSpiralPoints(
-  arm: SpiralArmDef,
-  sceneRadius: number,
-  count: number,
-): Float32Array {
-  const pitchRad = (arm.pitchDeg * Math.PI) / 180;
-  const tanPitch = Math.tan(pitchRad);
-  const positions = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    const t = i / count;
-    const theta = arm.startAzimuth + t * arm.windRange;
-    const r = arm.startRadius * Math.exp((theta - arm.startAzimuth) * tanPitch);
-
-    // Clamp to disk radius
-    if (r > 1.05) {
-      // Place remaining particles at the edge with random scatter
-      const edgeTheta = arm.startAzimuth + arm.windRange * (0.8 + Math.random() * 0.2);
-      const edgeR = 0.9 + Math.random() * 0.15;
-      positions[i * 3] = Math.cos(edgeTheta) * edgeR * sceneRadius;
-      positions[i * 3 + 2] = Math.sin(edgeTheta) * edgeR * sceneRadius;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * MW_DISK_THICKNESS_RATIO * sceneRadius * 2;
-      continue;
-    }
-
-    // Add scatter perpendicular to the arm (width ~0.02-0.04 of radius)
-    const spreadFactor = 0.025 + r * 0.015;
-    const perpAngle = theta + Math.PI / 2;
-    const spread = (Math.random() - 0.5) * 2 * spreadFactor;
-
-    const x = Math.cos(theta) * r + Math.cos(perpAngle) * spread;
-    const z = Math.sin(theta) * r + Math.sin(perpAngle) * spread;
-    const y = (Math.random() - 0.5) * MW_DISK_THICKNESS_RATIO * (1 + (1 - r) * 0.5);
-
-    positions[i * 3] = x * sceneRadius;
-    positions[i * 3 + 1] = y * sceneRadius;
-    positions[i * 3 + 2] = z * sceneRadius;
-  }
-
-  return positions;
-}

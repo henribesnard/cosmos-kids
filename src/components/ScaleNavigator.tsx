@@ -3,9 +3,10 @@ import { Icon } from './Icon';
 
 const destinations = [
   { id: 'earth', fr: 'Terre', en: 'Earth' },
-  { id: 'solar', fr: 'Système solaire', en: 'Solar System' },
-  { id: 'milkyway', fr: 'Voie lactée', en: 'Milky Way' },
-  { id: 'localgroup', fr: 'Groupe local', en: 'Local Group' },
+  { id: 'constellations', fr: 'Ciel nocturne', en: 'Night Sky' },
+  { id: 'solar', fr: 'Syst\u00E8me solaire', en: 'Solar System' },
+  { id: 'milkyway', fr: 'Voie lact\u00E9e', en: 'Milky Way' },
+  { id: 'localgroup', fr: 'Groupe local de galaxies', en: 'Local Group of galaxies' },
 ] as const;
 
 interface ScaleNavigatorProps {
@@ -16,7 +17,7 @@ interface ScaleNavigatorProps {
 
 export function ScaleNavigator({ locale, activeId, onTravel }: ScaleNavigatorProps) {
   return (
-    <nav className="scale-nav glass-panel" aria-label={locale === 'fr' ? 'Se déplacer dans l\u2019Univers' : 'Travel through the Universe'}>
+    <nav className="scale-nav glass-panel" data-scene-obstacle aria-label={locale === 'fr' ? 'Se déplacer dans l\u2019Univers' : 'Travel through the Universe'}>
       <span className="scale-nav__direction"><Icon name="orbit" size={16} />{locale === 'fr' ? 'Du proche au lointain' : 'Near to far'}</span>
       <div className="scale-nav__track" aria-hidden="true"><span /></div>
       {destinations.map((destination) => {

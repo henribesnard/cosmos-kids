@@ -5,10 +5,12 @@ import {
   type StateStorage,
 } from 'zustand/middleware';
 import type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
+import type { ConstellationAbbr } from '../data/constellationTypes';
 
 export type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
+export type { ConstellationAbbr } from '../data/constellationTypes';
 
-export type CosmosView = 'landing' | 'earth' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
+export type CosmosView = 'landing' | 'earth' | 'constellations' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
 export type CosmosOverlay = 'search' | 'compare' | 'credits' | null;
 export type SimulationTimeScale = 0 | 1 | 10 | 100 | 1_000 | 10_000;
 export type TravelPhase =
@@ -19,6 +21,12 @@ export type TravelPhase =
   | 'approaching'
   | 'arrived';
 
+export type TravelDestinationId =
+  | CosmicObjectId
+  | 'solar'
+  | 'milkyway'
+  | 'localgroup';
+
 export interface MissionState {
   readonly visitedObjectIds: CelestialObjectId[];
 }
@@ -26,7 +34,7 @@ export interface MissionState {
 export interface TravelState {
   readonly phase: TravelPhase;
   readonly originId: CosmicObjectId | null;
-  readonly destinationId: CosmicObjectId | null;
+  readonly destinationId: TravelDestinationId | null;
   readonly progress: number;
 }
 
@@ -34,11 +42,13 @@ export interface CosmosState {
   readonly view: CosmosView;
   readonly selectedObjectId: CosmicObjectId | null;
   readonly hoveredObjectId: CosmicObjectId | null;
+  readonly selectedConstellationId: ConstellationAbbr | null;
   readonly overlay: CosmosOverlay;
   readonly locale: Locale;
   readonly reducedMotion: boolean;
   readonly showOrbits: boolean;
   readonly showLabels: boolean;
+  readonly showConstellationLines: boolean;
   readonly timeScale: SimulationTimeScale;
   readonly snapshotDate: string | null;
   readonly mission: MissionState;
@@ -49,6 +59,7 @@ export interface CosmosActions {
   setView: (view: CosmosView) => void;
   selectObject: (id: CosmicObjectId | null) => void;
   hoverObject: (id: CosmicObjectId | null) => void;
+  selectConstellation: (id: ConstellationAbbr | null) => void;
   openOverlay: (overlay: NonNullable<CosmosOverlay>) => void;
   closeOverlay: () => void;
   setLocale: (locale: Locale) => void;
@@ -58,11 +69,13 @@ export interface CosmosActions {
   toggleOrbits: () => void;
   setShowLabels: (value: boolean) => void;
   toggleLabels: () => void;
+  setShowConstellationLines: (value: boolean) => void;
+  toggleConstellationLines: () => void;
   setTimeScale: (value: SimulationTimeScale) => void;
   markVisited: (id: CelestialObjectId) => void;
   resetMission: () => void;
   startTravel: (
-    destinationId: CosmicObjectId,
+    destinationId: TravelDestinationId,
     originId?: CosmicObjectId | null,
   ) => void;
   setTravelPhase: (phase: TravelPhase) => void;
@@ -95,11 +108,13 @@ function createInitialState(): CosmosState {
     view: 'landing',
     selectedObjectId: 'earth',
     hoveredObjectId: null,
+    selectedConstellationId: null,
     overlay: null,
     locale: 'fr',
     reducedMotion: systemPrefersReducedMotion(),
     showOrbits: true,
     showLabels: true,
+    showConstellationLines: true,
     timeScale: 1,
     snapshotDate: null,
     mission: { visitedObjectIds: [] },
@@ -115,10 +130,8 @@ type PersistedCosmosState = Pick<
   | 'view'
   | 'selectedObjectId'
   | 'locale'
-  | 'reducedMotion'
   | 'showOrbits'
   | 'showLabels'
-  | 'timeScale'
   | 'snapshotDate'
   | 'mission'
 >;
@@ -144,6 +157,7 @@ export const useCosmosStore = create<CosmosStore>()(
       setView: (view) => set({ view }),
       selectObject: (selectedObjectId) => set({ selectedObjectId }),
       hoverObject: (hoveredObjectId) => set({ hoveredObjectId }),
+      selectConstellation: (selectedConstellationId) => set({ selectedConstellationId }),
       openOverlay: (overlay) => set({ overlay }),
       closeOverlay: () => set({ overlay: null }),
       setLocale: (locale) => set({ locale }),
@@ -154,9 +168,11 @@ export const useCosmosStore = create<CosmosStore>()(
       toggleOrbits: () => set((state) => ({ showOrbits: !state.showOrbits })),
       setShowLabels: (showLabels) => set({ showLabels }),
       toggleLabels: () => set((state) => ({ showLabels: !state.showLabels })),
+      setShowConstellationLines: (showConstellationLines) => set({ showConstellationLines }),
+      toggleConstellationLines: () => set((state) => ({ showConstellationLines: !state.showConstellationLines })),
       setTimeScale: (timeScale) => set({ timeScale }),
       setSnapshotDate: (snapshotDate) =>
-        set(snapshotDate ? { snapshotDate, timeScale: 0 } : { snapshotDate: null }),
+        set(snapshotDate ? { snapshotDate, timeScale: 0 } : { snapshotDate: null, timeScale: 1 }),
 
       markVisited: (id) =>
         set((state) =>
@@ -198,18 +214,9 @@ export const useCosmosStore = create<CosmosStore>()(
         })),
       finishTravel: () =>
         set((state) => {
-          const destinationId = state.travel.destinationId;
-          if (!destinationId) return { travel: { ...IDLE_TRAVEL } };
-
-          const visitedObjectIds = state.mission.visitedObjectIds.includes(destinationId as CelestialObjectId)
-            ? state.mission.visitedObjectIds
-            : [...state.mission.visitedObjectIds, destinationId as CelestialObjectId];
-
+          if (!state.travel.destinationId) return { travel: { ...IDLE_TRAVEL } };
           return {
-            view: 'planet',
-            selectedObjectId: destinationId,
             hoveredObjectId: null,
-            mission: { visitedObjectIds },
             travel: { ...state.travel, phase: 'arrived', progress: 1 },
           };
         }),
@@ -224,10 +231,8 @@ export const useCosmosStore = create<CosmosStore>()(
         view: state.view,
         selectedObjectId: state.selectedObjectId,
         locale: state.locale,
-        reducedMotion: state.reducedMotion,
         showOrbits: state.showOrbits,
         showLabels: state.showLabels,
-        timeScale: state.timeScale,
         snapshotDate: state.snapshotDate,
         mission: state.mission,
       }),

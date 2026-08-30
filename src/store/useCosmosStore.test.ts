@@ -43,12 +43,26 @@ describe('useCosmosStore', () => {
 
     actions.finishTravel();
     const arrived = useCosmosStore.getState();
-    expect(arrived.view).toBe('planet');
-    expect(arrived.selectedObjectId).toBe('saturn');
+    expect(arrived.view).toBe('landing');
+    expect(arrived.selectedObjectId).toBe('earth');
     expect(arrived.travel.phase).toBe('arrived');
-    expect(arrived.mission.visitedObjectIds).toEqual(['saturn']);
+    expect(arrived.mission.visitedObjectIds).toEqual([]);
     expect(selectIsTravelling(arrived)).toBe(false);
   });
+
+  it.each(['solar', 'milkyway', 'localgroup'] as const)(
+    'conserve la destination de vue %s sans polluer la mission',
+    (destinationId) => {
+      const actions = useCosmosStore.getState();
+      actions.startTravel(destinationId);
+      actions.finishTravel();
+
+      const arrived = useCosmosStore.getState();
+      expect(arrived.travel).toMatchObject({ destinationId, phase: 'arrived', progress: 1 });
+      expect(arrived.mission.visitedObjectIds).toEqual([]);
+      expect(arrived.selectedObjectId).toBe('earth');
+    },
+  );
 
   it('ne duplique pas un objet visité', () => {
     const { markVisited } = useCosmosStore.getState();

@@ -42,10 +42,12 @@ import {
   type SceneOrbit,
   type UniverseView,
 } from './sceneCatalog';
+import { ConstellationScene } from './ConstellationScene';
 import { MilkyWayScene } from './MilkyWayScene';
 import { LocalGroupScene } from './LocalGroupScene';
 import { DeepSkyDetail } from './DeepSkyDetail';
 import { isDeepSkyObjectId, type DeepSkyObjectId } from '../data/types';
+import { useCosmosStore } from '../store/useCosmosStore';
 
 /** Public, controlled contract for the production Three/R3F viewport. */
 export interface UniverseViewportProps {
@@ -792,6 +794,8 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
     }
   });
 
+  const isConstellationView = view === 'constellations';
+
   return (
     <OrbitControls
       ref={controlsRef}
@@ -799,12 +803,14 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
       keyEvents={false}
       enableDamping={!reducedMotion}
       dampingFactor={0.075}
-      rotateSpeed={0.46}
-      zoomSpeed={0.68}
-      panSpeed={0.55}
+      rotateSpeed={isConstellationView ? 0.35 : 0.46}
+      zoomSpeed={isConstellationView ? 0 : 0.68}
+      panSpeed={isConstellationView ? 0 : 0.55}
+      enableZoom={!isConstellationView}
+      enablePan={!isConstellationView}
       screenSpacePanning
       minDistance={preset.minDistance}
-      maxDistance={preset.maxDistance}
+      maxDistance={isConstellationView ? 0.02 : preset.maxDistance}
       minPolarAngle={0.03}
       maxPolarAngle={Math.PI - 0.06}
       onStart={() => {
@@ -856,6 +862,17 @@ function UniverseScene(props: UniverseViewportProps & { onSceneReady: () => void
         />
       )}
       {props.view === 'earth' ? <EarthSystem key={`earth-${phaseKey}`} {...sharedProps} /> : null}
+      {props.view === 'constellations' ? (
+        <ConstellationScene
+          locale={locale}
+          showLabels={props.showLabels}
+          showLines={useCosmosStore.getState().showConstellationLines}
+          selectedConstellationId={useCosmosStore.getState().selectedConstellationId}
+          reducedMotion={props.reducedMotion}
+          onSelect={props.onSelect}
+          onHover={props.onHover}
+        />
+      ) : null}
       {props.view === 'solar' ? <SolarSystem key={`solar-${phaseKey}`} {...sharedProps} /> : null}
       {props.view === 'planet' ? <PlanetDetail {...sharedProps} bodyId={focusedBodyId} /> : null}
       {props.view === 'milkyway' ? (

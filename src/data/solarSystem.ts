@@ -1,5 +1,4 @@
 import {
-  CELESTIAL_OBJECT_IDS,
   type CelestialBody,
   type CelestialObjectId,
   type Locale,

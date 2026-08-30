@@ -13,10 +13,13 @@ import {
   type DeepSkyObjectId,
   type Locale,
 } from '../data';
+import { CONSTELLATIONS } from '../data/constellations';
+import { isConstellationAbbr, type ConstellationAbbr } from '../data/constellationTypes';
 import {
   useCosmosStore,
   type CosmosView,
   type SimulationTimeScale,
+  type TravelDestinationId,
   type TravelPhase,
 } from '../store';
 import { computePhasesAtDate } from '../scene/sceneCatalog';
@@ -32,6 +35,7 @@ import { SceneControls } from '../components/SceneControls';
 import { SearchDialog } from '../components/SearchDialog';
 import { TravelOverlay } from '../components/TravelOverlay';
 import type { ObjectDisplay } from './uiTypes';
+import { travelDestinationName } from './travelDestinations';
 
 const objectSymbols: Record<CelestialObjectId, string> = {
   sun: '☉',
@@ -168,9 +172,46 @@ function buildDeepSkyDisplay(obj: import('../data').DeepSkyObject): ObjectDispla
   };
 }
 
+const seasonLabels: Record<string, { fr: string; en: string }> = {
+  spring: { fr: 'Printemps', en: 'Spring' },
+  summer: { fr: '\u00C9t\u00E9', en: 'Summer' },
+  autumn: { fr: 'Automne', en: 'Autumn' },
+  winter: { fr: 'Hiver', en: 'Winter' },
+  circumpolar: { fr: 'Circumpolaire', en: 'Circumpolar' },
+};
+
+const hemisphereLabels: Record<string, { fr: string; en: string }> = {
+  north: { fr: 'H\u00E9misph\u00E8re nord', en: 'Northern hemisphere' },
+  south: { fr: 'H\u00E9misph\u00E8re sud', en: 'Southern hemisphere' },
+  both: { fr: 'Les deux h\u00E9misph\u00E8res', en: 'Both hemispheres' },
+};
+
+function buildConstellationDisplay(def: import('../data/constellationTypes').ConstellationDef): ObjectDisplay {
+  const season = seasonLabels[def.bestSeason] ?? { fr: def.bestSeason, en: def.bestSeason };
+  const hemisphere = hemisphereLabels[def.hemisphere] ?? { fr: def.hemisphere, en: def.hemisphere };
+  return {
+    id: def.id,
+    name: def.name,
+    kind: { fr: 'Constellation', en: 'Constellation' },
+    tagline: def.shortDescription,
+    description: def.shortDescription,
+    curious: def.mythology,
+    expert: def.science,
+    color: def.color,
+    symbol: def.symbol,
+    facts: [
+      { label: { fr: '\u00C9toile principale', en: 'Brightest star' }, value: def.brightestStar },
+      { label: { fr: 'Meilleure saison', en: 'Best season' }, value: season },
+      { label: { fr: 'Visible depuis', en: 'Visible from' }, value: hemisphere },
+      { label: { fr: 'Superficie', en: 'Area' }, value: { fr: `${formatNumber(def.areaSqDeg, 'fr')} deg\u00B2`, en: `${formatNumber(def.areaSqDeg, 'en')} deg\u00B2` } },
+    ],
+  };
+}
+
 const SOLAR_DISPLAY_OBJECTS = SOLAR_SYSTEM_BODIES.map(buildDisplayObject);
 const DEEP_SKY_DISPLAY_OBJECTS = DEEP_SKY_OBJECTS.map(buildDeepSkyDisplay);
-const ALL_DISPLAY_OBJECTS = [...SOLAR_DISPLAY_OBJECTS, ...DEEP_SKY_DISPLAY_OBJECTS];
+const CONSTELLATION_DISPLAY_OBJECTS = CONSTELLATIONS.map(buildConstellationDisplay);
+const ALL_DISPLAY_OBJECTS = [...SOLAR_DISPLAY_OBJECTS, ...DEEP_SKY_DISPLAY_OBJECTS, ...CONSTELLATION_DISPLAY_OBJECTS];
 
 const DISPLAY_BY_ID = Object.fromEntries(ALL_DISPLAY_OBJECTS.map((object) => [object.id, object])) as Record<string, ObjectDisplay>;
 const MISSION_IDS = ['earth', 'moon', 'mars', 'saturn'] as const;
@@ -179,36 +220,45 @@ const MISSION_IDS = ['earth', 'moon', 'mars', 'saturn'] as const;
 /*  Route helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-function routeForDestination(id: CosmicObjectId | 'solar' | 'milkyway' | 'localgroup') {
+function routeForDestination(id: CosmicObjectId | ConstellationAbbr | 'solar' | 'milkyway' | 'localgroup' | 'constellations') {
   if (id === 'solar') return '/explore/solar-system';
   if (id === 'milkyway') return '/explore/milky-way';
   if (id === 'localgroup') return '/explore/local-group';
+  if (id === 'constellations') return '/explore/constellations';
   if (id === 'earth') return '/explore/earth';
   if (isCelestialObjectId(id)) return `/explore/solar-system/${id}`;
   if (isDeepSkyObjectId(id)) return `/explore/deep-sky/${id}`;
+  if (isConstellationAbbr(id)) return `/explore/constellations/${id}`;
   return '/explore/solar-system';
 }
 
-type RouteResult = { view: CosmosView; selected: CosmicObjectId | null; overlayCredits: boolean };
+type RouteResult = { view: CosmosView; selected: CosmicObjectId | null; constellation: ConstellationAbbr | null; overlayCredits: boolean };
 
 function routeState(pathname: string): RouteResult | null {
-  if (pathname === '/') return { view: 'landing', selected: 'earth', overlayCredits: false };
-  if (pathname === '/explore/earth') return { view: 'earth', selected: 'earth', overlayCredits: false };
-  if (pathname === '/explore/solar-system') return { view: 'solar', selected: null, overlayCredits: false };
-  if (pathname === '/explore/milky-way') return { view: 'milkyway', selected: null, overlayCredits: false };
-  if (pathname === '/explore/local-group') return { view: 'localgroup', selected: null, overlayCredits: false };
-  if (pathname === '/credits') return { view: 'solar', selected: 'earth', overlayCredits: true };
+  if (pathname === '/') return { view: 'landing', selected: 'earth', constellation: null, overlayCredits: false };
+  if (pathname === '/explore/earth') return { view: 'earth', selected: 'earth', constellation: null, overlayCredits: false };
+  if (pathname === '/explore/constellations') return { view: 'constellations', selected: null, constellation: null, overlayCredits: false };
+  if (pathname === '/explore/solar-system') return { view: 'solar', selected: null, constellation: null, overlayCredits: false };
+  if (pathname === '/explore/milky-way') return { view: 'milkyway', selected: null, constellation: null, overlayCredits: false };
+  if (pathname === '/explore/local-group') return { view: 'localgroup', selected: null, constellation: null, overlayCredits: false };
+  if (pathname === '/credits') return { view: 'solar', selected: 'earth', constellation: null, overlayCredits: true };
+
+  // Constellation detail
+  const constellationMatch = pathname.match(/^\/explore\/constellations\/([^/]+)\/?$/);
+  if (constellationMatch?.[1] && isConstellationAbbr(constellationMatch[1])) {
+    return { view: 'constellations', selected: null, constellation: constellationMatch[1], overlayCredits: false };
+  }
 
   // Solar system body detail
   const solarMatch = pathname.match(/^\/explore\/solar-system\/([^/]+)\/?$/);
   if (solarMatch?.[1] && isCelestialObjectId(solarMatch[1])) {
-    return { view: 'planet', selected: solarMatch[1], overlayCredits: false };
+    return { view: 'planet', selected: solarMatch[1], constellation: null, overlayCredits: false };
   }
 
   // Deep-sky object detail
   const deepSkyMatch = pathname.match(/^\/explore\/deep-sky\/([^/]+)\/?$/);
   if (deepSkyMatch?.[1] && isDeepSkyObjectId(deepSkyMatch[1])) {
-    return { view: 'deepsky', selected: deepSkyMatch[1], overlayCredits: false };
+    return { view: 'deepsky', selected: deepSkyMatch[1], constellation: null, overlayCredits: false };
   }
 
   return null;
@@ -223,6 +273,8 @@ function toSceneView(view: CosmosView): import('../scene/sceneCatalog').Universe
     case 'landing':
     case 'earth':
       return 'earth';
+    case 'constellations':
+      return 'constellations';
     case 'solar':
       return 'solar';
     case 'planet':
@@ -247,7 +299,7 @@ export function App() {
   const navigate = useNavigate();
   const [missionOpen, setMissionOpen] = useState(false);
   const returnPathRef = useRef('/explore/solar-system');
-  const travelTargetRef = useRef<CosmicObjectId | 'solar' | 'milkyway' | 'localgroup'>('earth');
+  const travelTargetRef = useRef<TravelDestinationId>('earth');
   const travelFrameRef = useRef<number | null>(null);
   const travelEndTimerRef = useRef<number | null>(null);
 
@@ -280,6 +332,7 @@ export function App() {
     const state = useCosmosStore.getState();
     state.setView(next.view);
     state.selectObject(next.selected);
+    state.selectConstellation(next.constellation);
     if (next.overlayCredits) state.openOverlay('credits');
     else if (state.overlay === 'credits') state.closeOverlay();
     if (next.view === 'earth') state.markVisited('earth');
@@ -306,10 +359,18 @@ export function App() {
     if (travelEndTimerRef.current !== null) window.clearTimeout(travelEndTimerRef.current);
   }, []);
 
-  const navigateDirectly = useCallback((destination: CosmicObjectId | 'solar' | 'milkyway' | 'localgroup') => {
+  const navigateDirectly = useCallback((destination: CosmicObjectId | 'solar' | 'milkyway' | 'localgroup' | 'constellations' | ConstellationAbbr) => {
     const state = useCosmosStore.getState();
     state.closeOverlay();
-    if (destination === 'solar') {
+    if (destination === 'constellations') {
+      state.setView('constellations');
+      state.selectObject(null);
+      state.selectConstellation(null);
+    } else if (isConstellationAbbr(destination)) {
+      state.setView('constellations');
+      state.selectObject(null);
+      state.selectConstellation(destination);
+    } else if (destination === 'solar') {
       state.setView('solar');
       state.selectObject(null);
     } else if (destination === 'milkyway') {
@@ -334,7 +395,13 @@ export function App() {
   }, [navigate]);
 
   const beginTravel = useCallback((destination: string) => {
-    const target: CosmicObjectId | 'solar' | 'milkyway' | 'localgroup' =
+    // Constellation navigation — no travel animation, just navigate directly
+    if (destination === 'constellations' || isConstellationAbbr(destination)) {
+      navigateDirectly(destination as 'constellations' | ConstellationAbbr);
+      return;
+    }
+
+    const target: TravelDestinationId =
       destination === 'solar' ? 'solar'
       : destination === 'milkyway' ? 'milkyway'
       : destination === 'localgroup' ? 'localgroup'
@@ -350,14 +417,8 @@ export function App() {
     if (travelFrameRef.current !== null) cancelAnimationFrame(travelFrameRef.current);
     if (travelEndTimerRef.current !== null) window.clearTimeout(travelEndTimerRef.current);
 
-    const travelObjectId: CosmicObjectId =
-      target === 'solar' ? 'sun'
-      : target === 'milkyway' ? 'sgr-a'
-      : target === 'localgroup' ? 'andromeda'
-      : target;
-
     travelTargetRef.current = target;
-    store.startTravel(travelObjectId);
+    store.startTravel(target);
     const startedAt = performance.now();
     const duration = 2_250;
     let lastPhase: TravelPhase = 'preparing';
@@ -393,13 +454,30 @@ export function App() {
   }, [navigate]);
 
   const selectInScene = useCallback((id: string) => {
+    // Constellation selection in constellation view
+    if (isConstellationAbbr(id)) {
+      const state = useCosmosStore.getState();
+      state.selectConstellation(id);
+      navigate(`/explore/constellations/${id}`);
+      return;
+    }
     if (!isCosmicObjectId(id)) return;
     const state = useCosmosStore.getState();
     state.selectObject(id);
     if (isCelestialObjectId(id)) state.markVisited(id);
-  }, []);
+  }, [navigate]);
 
   const activateSceneObject = useCallback((id: string) => {
+    // From the Milky Way view, clicking the Sun marker navigates to the solar system overview
+    if (id === 'sun' && useCosmosStore.getState().view === 'milkyway') {
+      beginTravel('solar');
+      return;
+    }
+    // Constellation selection
+    if (isConstellationAbbr(id)) {
+      selectInScene(id);
+      return;
+    }
     if (!isCosmicObjectId(id)) return;
     const state = useCosmosStore.getState();
     const alreadyDisplayed =
@@ -414,8 +492,14 @@ export function App() {
     beginTravel(id);
   }, [beginTravel, selectInScene]);
 
-  const currentObject = selectedObjectId ? DISPLAY_BY_ID[selectedObjectId] ?? null : null;
-  const travelDestination = travel.destinationId ? DISPLAY_BY_ID[travel.destinationId] ?? null : null;
+  const selectedConstellationId = useCosmosStore((state) => state.selectedConstellationId);
+  const showConstellationLines = useCosmosStore((state) => state.showConstellationLines);
+
+  const currentConstellation = selectedConstellationId ? DISPLAY_BY_ID[selectedConstellationId] ?? null : null;
+  const currentObject = (view === 'constellations' ? currentConstellation : null) ?? (selectedObjectId ? DISPLAY_BY_ID[selectedObjectId] ?? null : null);
+  const currentTravelDestinationName = travel.destinationId
+    ? travelDestinationName(travel.destinationId, locale)
+    : null;
   const isLanding = view === 'landing';
   const sceneView = toSceneView(view);
 
@@ -423,7 +507,8 @@ export function App() {
   const missionProgress = Math.round((missionComplete / MISSION_IDS.length) * 100);
 
   const activeScaleId =
-    view === 'solar' ? 'solar'
+    view === 'constellations' ? 'constellations'
+    : view === 'solar' ? 'solar'
     : view === 'milkyway' ? 'milkyway'
     : view === 'localgroup' ? 'localgroup'
     : view === 'deepsky' ? 'milkyway'
@@ -432,7 +517,7 @@ export function App() {
   const visibleObjects: ObjectDisplay[] = useMemo(() => {
     if (sceneView === 'earth') return SOLAR_DISPLAY_OBJECTS.filter((item) => item.id === 'earth' || item.id === 'moon');
     if (sceneView === 'planet' && selectedObjectId) { const o = DISPLAY_BY_ID[selectedObjectId]; return o ? [o] : []; }
-    if (sceneView === 'milkyway') return DEEP_SKY_DISPLAY_OBJECTS;
+    if (sceneView === 'milkyway') return DEEP_SKY_DISPLAY_OBJECTS.filter((object) => DEEP_SKY_BY_ID[object.id as DeepSkyObjectId]?.kind !== 'galaxy');
     if (sceneView === 'localgroup') return DEEP_SKY_DISPLAY_OBJECTS.filter((o) => DEEP_SKY_BY_ID[o.id as DeepSkyObjectId]?.kind === 'galaxy');
     if (sceneView === 'deepsky' && selectedObjectId) { const o = DISPLAY_BY_ID[selectedObjectId]; return o ? [o] : []; }
     return SOLAR_DISPLAY_OBJECTS;
@@ -440,6 +525,17 @@ export function App() {
 
   // Show solar scene controls only for earth/solar/planet views
   const showSolarControls = sceneView === 'earth' || sceneView === 'solar' || sceneView === 'planet';
+  const showGalacticLabelControls = sceneView === 'milkyway' || sceneView === 'localgroup';
+  const showConstellationControls = sceneView === 'constellations';
+  const sceneNote = view === 'constellations'
+    ? (locale === 'fr'
+      ? 'Positions Hipparcos (ESA) \u00B7 figures d3-celestial (BSD-3)'
+      : 'Hipparcos positions (ESA) \u00B7 d3-celestial figures (BSD-3)')
+    : view === 'milkyway'
+    ? (locale === 'fr'
+      ? 'Vue d’artiste ESA/Gaia 2025 · reconstruction, pas une photographie'
+      : 'ESA/Gaia 2025 artist’s view · reconstruction, not a photograph')
+    : (locale === 'fr' ? 'Tailles et distances visuelles simplifiées' : 'Visual sizes and distances simplified');
 
   return (
     <div className={`app-shell ${isLanding ? 'app-shell--landing' : ''}`}>
@@ -481,30 +577,61 @@ export function App() {
           <LandingHero locale={locale} onStart={() => navigateDirectly('earth')} onSolar={() => navigateDirectly('solar')} />
         ) : (
           <>
-            <div className="breadcrumbs" aria-label={locale === 'fr' ? 'Fil d\u2019Ariane' : 'Breadcrumb'}>
-              <button type="button" onClick={() => navigateDirectly('earth')}>{locale === 'fr' ? 'Terre' : 'Earth'}</button><span>›</span>
-              <button type="button" onClick={() => navigateDirectly('solar')}>{locale === 'fr' ? 'Système solaire' : 'Solar System'}</button>
-              {(view === 'milkyway' || view === 'localgroup' || view === 'deepsky') && (
-                <><span>›</span><button type="button" onClick={() => navigateDirectly('milkyway')}>{locale === 'fr' ? 'Voie lactée' : 'Milky Way'}</button></>
+            <div className="breadcrumbs" data-scene-obstacle aria-label={locale === 'fr' ? 'Fil d\u2019Ariane' : 'Breadcrumb'}>
+              <button type="button" onClick={() => navigateDirectly('earth')}>{locale === 'fr' ? 'Terre' : 'Earth'}</button>
+              {view === 'constellations' ? (
+                <>
+                  <span aria-hidden="true">›</span>
+                  {selectedConstellationId ? (
+                    <button type="button" onClick={() => navigateDirectly('constellations')}>{locale === 'fr' ? 'Ciel nocturne' : 'Night Sky'}</button>
+                  ) : (
+                    <b>{locale === 'fr' ? 'Ciel nocturne' : 'Night Sky'}</b>
+                  )}
+                  {currentConstellation && <><span aria-hidden="true">›</span><b>{currentConstellation.name[locale]}</b></>}
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">›</span>
+                  <button type="button" onClick={() => navigateDirectly('solar')}>{locale === 'fr' ? 'Syst\u00E8me solaire' : 'Solar System'}</button>
+                  {(view === 'milkyway' || view === 'localgroup' || view === 'deepsky') && (
+                    <><span aria-hidden="true">›</span><button type="button" onClick={() => navigateDirectly('milkyway')}>{locale === 'fr' ? 'Voie lact\u00E9e' : 'Milky Way'}</button></>
+                  )}
+                  {view === 'localgroup' && (
+                    <><span aria-hidden="true">›</span><b>{locale === 'fr' ? 'Groupe local de galaxies' : 'Local Group of galaxies'}</b></>
+                  )}
+                  {currentObject && view === 'planet' && <><span aria-hidden="true">›</span><b>{currentObject.name[locale]}</b></>}
+                  {currentObject && view === 'deepsky' && <><span aria-hidden="true">›</span><b>{currentObject.name[locale]}</b></>}
+                </>
               )}
-              {view === 'localgroup' && (
-                <><span>›</span><b>{locale === 'fr' ? 'Groupe local' : 'Local Group'}</b></>
-              )}
-              {currentObject && view === 'planet' && <><span>›</span><b>{currentObject.name[locale]}</b></>}
-              {currentObject && view === 'deepsky' && <><span>›</span><b>{currentObject.name[locale]}</b></>}
             </div>
             <MissionPanel locale={locale} visited={visitedObjectIds} open={missionOpen} onClose={() => setMissionOpen(false)} onTravel={beginTravel} />
             {currentObject && <InfoPanel key={currentObject.id} locale={locale} object={currentObject} onCompare={() => useCosmosStore.getState().openOverlay('compare')} onClose={() => {
-              if (view === 'planet') navigateDirectly('solar');
+              if (view === 'constellations') navigateDirectly('constellations');
+              else if (view === 'planet') navigateDirectly('solar');
               else if (view === 'deepsky') navigateDirectly('milkyway');
               else useCosmosStore.getState().selectObject(null);
             }} />}
             <ScaleNavigator locale={locale} activeId={activeScaleId} onTravel={beginTravel} />
-            {showSolarControls && (
+            {showConstellationControls && (
+              <SceneControls
+                locale={locale}
+                showLabels={showLabels}
+                showOrbits={showConstellationLines}
+                labelsOnly={false}
+                timeScale={0}
+                snapshotDate={null}
+                onLabels={() => useCosmosStore.getState().toggleLabels()}
+                onOrbits={() => useCosmosStore.getState().toggleConstellationLines()}
+                onTimeScale={() => {}}
+                onSnapshotDate={() => {}}
+              />
+            )}
+            {(showSolarControls || showGalacticLabelControls) && (
               <SceneControls
                 locale={locale}
                 showLabels={showLabels}
                 showOrbits={showOrbits}
+                labelsOnly={showGalacticLabelControls}
                 timeScale={timeScale}
                 snapshotDate={snapshotDate}
                 onLabels={() => useCosmosStore.getState().toggleLabels()}
@@ -520,14 +647,23 @@ export function App() {
       <button className="credits-trigger" type="button" onClick={openCredits}>
         {locale === 'fr' ? 'Sources & crédits' : 'Sources & credits'}
       </button>
-      {!isLanding && <p className="scene-note">{locale === 'fr' ? 'Tailles et distances visuelles simplifiées' : 'Visual sizes and distances simplified'}</p>}
+      {!isLanding && <p className="scene-note" data-scene-obstacle>{sceneNote}</p>}
 
-      <AccessibleObjectList locale={locale} objects={visibleObjects} onSelect={activateSceneObject} />
+      <AccessibleObjectList
+        locale={locale}
+        objects={visibleObjects}
+        onSelect={activateSceneObject}
+        contextDescription={view === 'milkyway'
+          ? (locale === 'fr'
+            ? 'Structure affichée : barre centrale, bras Écu–Centaure, Persée, Sagittaire–Carène, Norma–Externe et bras local d’Orion.'
+            : 'Displayed structure: central bar, Scutum–Centaurus, Perseus, Sagittarius–Carina, Norma–Outer, and the Local Orion Arm.')
+          : undefined}
+      />
       {overlay === 'search' && <SearchDialog locale={locale} objects={ALL_DISPLAY_OBJECTS} onClose={() => useCosmosStore.getState().closeOverlay()} onSelect={(id) => { useCosmosStore.getState().closeOverlay(); beginTravel(id); }} />}
       {overlay === 'compare' && currentObject && <CompareDialog locale={locale} primary={currentObject} objects={ALL_DISPLAY_OBJECTS} onClose={() => useCosmosStore.getState().closeOverlay()} onTravel={(id) => { useCosmosStore.getState().closeOverlay(); beginTravel(id); }} />}
       {overlay === 'credits' && <CreditsDialog locale={locale} onClose={closeCredits} />}
-      {travel.phase !== 'idle' && travelDestination && (
-        <TravelOverlay locale={locale} destinationName={travelDestination.name[locale]} progress={travel.progress} phase={travel.phase} reducedMotion={reducedMotion} onSkip={() => { if (travel.destinationId) { useCosmosStore.getState().finishTravel(); navigateDirectly(travelTargetRef.current); useCosmosStore.getState().cancelTravel(); } }} />
+      {travel.phase !== 'idle' && travel.destinationId && currentTravelDestinationName && (
+        <TravelOverlay destinationId={travel.destinationId} locale={locale} destinationName={currentTravelDestinationName} progress={travel.progress} phase={travel.phase} reducedMotion={reducedMotion} onSkip={() => { if (travel.destinationId) { useCosmosStore.getState().finishTravel(); navigateDirectly(travelTargetRef.current); useCosmosStore.getState().cancelTravel(); } }} />
       )}
     </div>
   );

@@ -46,7 +46,7 @@ export function Header({
   }, [destOpen]);
 
   return (
-    <header className={`topbar ${isLanding ? 'topbar--landing' : ''}`}>
+    <header className={`topbar ${isLanding ? 'topbar--landing' : ''}`} data-scene-obstacle>
       <button className="brand-button" type="button" onClick={onHome} aria-label="Accueil COSMOS KIDS">
         <Brand />
       </button>

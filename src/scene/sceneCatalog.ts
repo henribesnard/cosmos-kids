@@ -8,7 +8,7 @@ import { EPHEMERIS_SNAPSHOT, getEphemerisVector, type PlanetId } from '../data';
  * The scene is self-contained and never requests a remote API at runtime.
  */
 
-export type UniverseView = 'earth' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
+export type UniverseView = 'earth' | 'constellations' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
 
 export type SceneBodyId =
   | 'sun'
@@ -284,6 +284,13 @@ export const sceneCameraPresets: Readonly<Record<UniverseView, SceneCameraPreset
     fov: 46,
     minDistance: 8,
     maxDistance: 42,
+  },
+  constellations: {
+    position: [0, 0, 0.01],
+    target: [0, 0, 200],
+    fov: 60,
+    minDistance: 0,
+    maxDistance: 0,
   },
   solar: {
     position: [0, 43, 72],

@@ -22,7 +22,7 @@ export function InfoPanel({ locale, object, onCompare, onClose }: InfoPanelProps
   ];
 
   return (
-    <aside className="info-panel glass-panel" aria-label={`${object.name[locale]} — ${fr ? 'informations' : 'information'}`}>
+    <aside className="info-panel glass-panel" data-scene-obstacle aria-label={`${object.name[locale]} — ${fr ? 'informations' : 'information'}`}>
       <div className="info-panel__accent" style={{ '--object-color': object.color } as React.CSSProperties} />
       <button className="icon-button info-panel__close" type="button" onClick={onClose} aria-label={fr ? 'Fermer la fiche' : 'Close information'}>
         <Icon name="close" />
@@ -61,4 +61,3 @@ export function InfoPanel({ locale, object, onCompare, onClose }: InfoPanelProps
     </aside>
   );
 }
-

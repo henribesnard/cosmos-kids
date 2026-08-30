@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "esa-gaia-milky-way-2025",
+  "title": "ESA/Gaia Milky Way face-on artist impression",
+  "retrievedAt": "2026-08-30",
+  "source": {
+    "name": "ESA/Gaia/DPAC, Stefan Payne-Wardenaar",
+    "pageUrl": "https://www.esa.int/ESA_Multimedia/Images/2025/01/The_best_Milky_Way_map_by_Gaia",
+    "fileUrl": "https://www.esa.int/var/esa/storage/images/esa_multimedia/images/2025/01/the_best_milky_way_map_by_gaia/26530987-1-eng-GB/The_best_Milky_Way_map_by_Gaia.jpg"
+  },
+  "license": {
+    "spdx": "CC-BY-SA-3.0-IGO",
+    "name": "Creative Commons Attribution-ShareAlike 3.0 IGO",
+    "url": "https://creativecommons.org/licenses/by-sa/3.0/igo/",
+    "attributionText": "‘The best Milky Way map by Gaia’ — ESA/Gaia/DPAC, Stefan Payne-Wardenaar, licensed under CC BY-SA 3.0 IGO. The source file was renamed locally; its pixels are unchanged.",
+    "changeNotice": "The source JPEG was renamed locally to gaia-milky-way-face-on.jpg; image pixels are unchanged."
+  },
+  "scientificCaveats": [
+    "This face-on image is an artist’s impression based on Gaia data, not a photograph of the Milky Way seen from outside.",
+    "The COSMOS KIDS interactive spiral-arm geometry is a separate reconstruction informed by Reid et al. (2019), DOI 10.3847/1538-4357/ab4a11; it is not extracted from this image.",
+    "Spiral-arm boundaries and the Galaxy’s face-on appearance remain model-dependent and must not be presented as exact."
+  ],
+  "assets": [
+    {
+      "id": "milky-way-gaia-face-on-reference",
+      "body": "milky-way",
+      "role": "artist-impression-face-on-reference",
+      "source": {
+        "fileName": "The_best_Milky_Way_map_by_Gaia.jpg",
+        "url": "https://www.esa.int/var/esa/storage/images/esa_multimedia/images/2025/01/the_best_milky_way_map_by_gaia/26530987-1-eng-GB/The_best_Milky_Way_map_by_Gaia.jpg",
+        "mimeType": "image/jpeg",
+        "width": 2100,
+        "height": 2100,
+        "byteLength": 4594741,
+        "sha256": "27335a98042e8e6da005e82f2dec14f236ae7d23cda9f218354f24b3fc1fd627"
+      },
+      "output": {
+        "fileName": "gaia-milky-way-face-on.jpg",
+        "mimeType": "image/jpeg",
+        "width": 2100,
+        "height": 2100,
+        "byteLength": 4594741,
+        "sha256": "27335a98042e8e6da005e82f2dec14f236ae7d23cda9f218354f24b3fc1fd627",
+        "colorSpace": "srgb"
+      }
+    }
+  ]
+}

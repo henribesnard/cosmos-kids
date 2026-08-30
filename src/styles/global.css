@@ -93,11 +93,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .scene-layer { inset: 0; position: absolute; z-index: 0; }
 
 .scene-layer canvas { display: block; height: 100% !important; width: 100% !important; }
-.app-shell--landing .scene-layer canvas { transform: translateX(17%) scale(1.04); transform-origin: center; }
+.app-shell--landing .scene-layer { right: -30%; }
 
 .scene-vignette {
   background:
-    linear-gradient(90deg, rgba(3, 6, 15, .82) 0%, rgba(3, 6, 15, .15) 38%, transparent 60%),
     linear-gradient(to bottom, rgba(3, 6, 15, .3), transparent 25%, transparent 70%, rgba(3, 6, 15, .62));
   inset: 0;
   pointer-events: none;
@@ -449,6 +448,42 @@ kbd { font-family: 'Space Grotesk'; }
 .accessible-catalog { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; width: 1px; }
 .accessible-catalog:focus-within { background: var(--panel-strong); clip: auto; clip-path: none; height: auto; left: 20px; padding: 20px; top: 90px; width: 280px; z-index: 100; }
 
+.galaxy-label-layer { inset: 0; overflow: hidden; pointer-events: none; position: absolute; }
+.galaxy-label-layer__leaders { height: 100%; inset: 0; overflow: visible; pointer-events: none; position: absolute; width: 100%; }
+.galaxy-label-layer__leaders line, .galaxy-label-layer__leaders circle { opacity: 0; transition: opacity .14s ease; }
+.galaxy-label {
+  appearance: none;
+  background: rgba(5, 10, 22, .8);
+  border: 1px solid rgba(184, 201, 223, .35);
+  border-radius: 999px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .55);
+  font-family: 'Outfit', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  left: 0;
+  line-height: 1.15;
+  margin: 0;
+  max-width: min(230px, 42vw);
+  opacity: 0;
+  padding: 5px 10px;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  text-shadow: 0 1px 6px #000;
+  top: 0;
+  transition: opacity .14s ease, border-color .14s ease;
+  user-select: none;
+  visibility: hidden;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+button.galaxy-label { cursor: pointer; pointer-events: auto; }
+button.galaxy-label:hover { background: rgba(12, 25, 46, .94); box-shadow: 0 0 0 2px rgba(99, 230, 255, .12), 0 6px 22px rgba(0, 0, 0, .65); }
+.galaxy-label--arm { backdrop-filter: blur(7px); letter-spacing: .025em; }
+.galaxy-label--landmark { background: rgba(8, 14, 28, .9); font-size: 12px; font-weight: 700; padding: 6px 11px; }
+.galaxy-label--object { background: rgba(5, 10, 22, .72); border-color: rgba(150, 180, 215, .24); font-size: 10px; font-weight: 500; padding: 4px 8px; }
+.galaxy-label-layer.is-reduced-motion .galaxy-label { transition: none; }
+
 .scene-loading, .scene-error { align-items: center; color: #aab6ce; display: flex; flex-direction: column; inset: 0; justify-content: center; position: absolute; text-align: center; }
 .scene-loading__orbit { animation: loading-spin 1.4s linear infinite; border: 1px solid rgba(99,230,255,.22); border-radius: 50%; height: 70px; margin-bottom: 16px; position: relative; transform: rotateX(62deg); width: 70px; }
 .scene-loading__orbit::before { background: var(--cyan); border-radius: 50%; box-shadow: 0 0 13px var(--cyan); content: ''; height: 7px; left: 7px; position: absolute; top: 7px; width: 7px; }
@@ -526,6 +561,9 @@ kbd { font-family: 'Space Grotesk'; }
   .compare-row { grid-template-columns: 1fr 84px 1fr; }
   .compare-dialog > footer { align-items: stretch; flex-direction: column; }
   .credits-dialog > footer { align-items: stretch; flex-direction: column; gap: 12px; }
+  .galaxy-label { font-size: 9px; max-width: 150px; padding: 4px 7px; white-space: normal; }
+  .galaxy-label--landmark { font-size: 10px; }
+  .galaxy-label--object { font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

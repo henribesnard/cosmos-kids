@@ -10,7 +10,7 @@ import {
   ShaderMaterial,
 } from 'three';
 import type { Locale } from '../data/types';
-import { LOCAL_GROUP_GALAXIES } from './galaxyCatalog';
+import { LOCAL_GROUP_GALAXIES, createSeededRandom } from './galaxyCatalog';
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -73,28 +73,30 @@ function GalaxySprite({
     const baseColor = new Color(color);
     const coreColor = new Color(color).lerp(new Color('#ffe8a0'), 0.5);
     const tmpC = new Color();
+    const seed = [...id].reduce((value, character) => value + character.charCodeAt(0), 44_009);
+    const random = createSeededRandom(seed);
 
     for (let i = 0; i < count; i++) {
       const t = i / count;
       if (t < 0.35) {
         // Core
-        const r = Math.pow(Math.random(), 0.6) * scale * 0.3;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const theta = Math.random() * Math.PI * 2;
+        const r = Math.pow(random(), 0.6) * scale * 0.3;
+        const phi = Math.acos(2 * random() - 1);
+        const theta = random() * Math.PI * 2;
         positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
         positions[i * 3 + 1] = r * Math.cos(phi) * 0.3;
         positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
         tmpC.copy(coreColor);
-        sizes[i] = 0.4 + Math.random() * 0.8;
+        sizes[i] = 0.4 + random() * 0.8;
       } else {
         // Disk
-        const r = Math.sqrt(Math.random()) * scale;
-        const theta = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(random()) * scale;
+        const theta = random() * Math.PI * 2;
         positions[i * 3] = Math.cos(theta) * r;
-        positions[i * 3 + 1] = (Math.random() - 0.5) * scale * 0.04;
+        positions[i * 3 + 1] = (random() - 0.5) * scale * 0.04;
         positions[i * 3 + 2] = Math.sin(theta) * r;
-        tmpC.copy(baseColor).lerp(new Color('#a0c0ff'), Math.random() * 0.3);
-        sizes[i] = 0.3 + Math.random() * 0.6;
+        tmpC.copy(baseColor).lerp(new Color('#a0c0ff'), random() * 0.3);
+        sizes[i] = 0.3 + random() * 0.6;
       }
 
       colors[i * 3] = tmpC.r;
@@ -135,7 +137,7 @@ function GalaxySprite({
     });
 
     return { geometry: geo, material: mat };
-  }, [color, scale]);
+  }, [color, id, scale]);
 
   const scaledPos: [number, number, number] = [
     position[0] * LG_SCALE,
