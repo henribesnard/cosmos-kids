@@ -566,6 +566,13 @@ button.galaxy-label:hover { background: rgba(12, 25, 46, .94); box-shadow: 0 0 0
   .galaxy-label--object { font-size: 9px; }
 }
 
+/* ---- Footer signature ---- */
+.site-footer { align-items: center; bottom: 4px; color: #4a5570; display: flex; font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 9px; gap: 7px; left: 26px; letter-spacing: .08em; pointer-events: none; position: absolute; white-space: nowrap; z-index: 8; }
+.site-footer__mark { background: linear-gradient(135deg, #63e6ff 0%, #2f6bff 50%, #a67bff 100%); border-radius: 2.5px; display: inline-block; height: 9px; opacity: .55; transform: skewX(-7deg); width: 9px; }
+.site-footer__text { opacity: .6; }
+@media (max-width: 820px) { .site-footer { bottom: 70px; left: 12px; } }
+@media (max-width: 580px) { .site-footer { display: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
 }

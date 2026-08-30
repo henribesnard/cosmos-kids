@@ -27,6 +27,7 @@ import { AccessibleObjectList } from '../components/AccessibleObjectList';
 import { CompareDialog } from '../components/CompareDialog';
 import { CreditsDialog } from '../components/CreditsDialog';
 import { Header } from '../components/Header';
+import { Footer } from '../components/Footer';
 import { InfoPanel } from '../components/InfoPanel';
 import { LandingHero } from '../components/LandingHero';
 import { MissionPanel } from '../components/MissionPanel';
@@ -665,6 +666,7 @@ export function App() {
       {travel.phase !== 'idle' && travel.destinationId && currentTravelDestinationName && (
         <TravelOverlay destinationId={travel.destinationId} locale={locale} destinationName={currentTravelDestinationName} progress={travel.progress} phase={travel.phase} reducedMotion={reducedMotion} onSkip={() => { if (travel.destinationId) { useCosmosStore.getState().finishTravel(); navigateDirectly(travelTargetRef.current); useCosmosStore.getState().cancelTravel(); } }} />
       )}
+      <Footer />
     </div>
   );
 }
