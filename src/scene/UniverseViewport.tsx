@@ -42,6 +42,10 @@ import {
   type SceneOrbit,
   type UniverseView,
 } from './sceneCatalog';
+import { MilkyWayScene } from './MilkyWayScene';
+import { LocalGroupScene } from './LocalGroupScene';
+import { DeepSkyDetail } from './DeepSkyDetail';
+import { isDeepSkyObjectId, type DeepSkyObjectId } from '../data/types';
 
 /** Public, controlled contract for the production Three/R3F viewport. */
 export interface UniverseViewportProps {
@@ -840,18 +844,46 @@ function UniverseScene(props: UniverseViewportProps & { onSceneReady: () => void
   return (
     <>
       <color attach="background" args={[sceneRenderConfig.background]} />
-      <Stars
-        radius={125}
-        depth={65}
-        count={2_600}
-        factor={3.2}
-        saturation={0.12}
-        fade
-        speed={props.reducedMotion ? 0 : 0.12}
-      />
+      {(props.view === 'earth' || props.view === 'solar' || props.view === 'planet' || props.view === 'deepsky') && (
+        <Stars
+          radius={125}
+          depth={65}
+          count={2_600}
+          factor={3.2}
+          saturation={0.12}
+          fade
+          speed={props.reducedMotion ? 0 : 0.12}
+        />
+      )}
       {props.view === 'earth' ? <EarthSystem key={`earth-${phaseKey}`} {...sharedProps} /> : null}
       {props.view === 'solar' ? <SolarSystem key={`solar-${phaseKey}`} {...sharedProps} /> : null}
       {props.view === 'planet' ? <PlanetDetail {...sharedProps} bodyId={focusedBodyId} /> : null}
+      {props.view === 'milkyway' ? (
+        <MilkyWayScene
+          locale={locale}
+          showLabels={props.showLabels}
+          reducedMotion={props.reducedMotion}
+          onSelect={props.onSelect}
+          onHover={props.onHover}
+        />
+      ) : null}
+      {props.view === 'localgroup' ? (
+        <LocalGroupScene
+          locale={locale}
+          showLabels={props.showLabels}
+          reducedMotion={props.reducedMotion}
+          onSelect={props.onSelect}
+          onHover={props.onHover}
+        />
+      ) : null}
+      {props.view === 'deepsky' && isDeepSkyObjectId(props.selectedId ?? '') ? (
+        <DeepSkyDetail
+          objectId={props.selectedId as DeepSkyObjectId}
+          locale={locale}
+          showLabels={props.showLabels}
+          reducedMotion={props.reducedMotion}
+        />
+      ) : null}
       <CameraRig view={props.view} reducedMotion={props.reducedMotion} />
       <ReadySignal onReady={props.onSceneReady} />
     </>
@@ -876,7 +908,7 @@ export function UniverseViewport(props: UniverseViewportProps) {
   return (
     <div
       data-universe-viewport={props.view}
-      aria-label={locale === 'en' ? '3D view of the Solar System' : 'Vue 3D du système solaire'}
+      aria-label={locale === 'en' ? '3D view of the Universe' : 'Vue 3D de l\u2019Univers'}
       style={{
         position: 'relative',
         width: '100%',
@@ -897,7 +929,7 @@ export function UniverseViewport(props: UniverseViewportProps) {
             position: [...sceneCameraPresets[props.view].position],
             fov: sceneCameraPresets[props.view].fov,
             near: 0.05,
-            far: 500,
+            far: 2000,
           }}
           gl={{
             antialias: true,

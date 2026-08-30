@@ -4,11 +4,11 @@ import {
   persist,
   type StateStorage,
 } from 'zustand/middleware';
-import type { CelestialObjectId, Locale } from '../data';
+import type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
 
-export type { CelestialObjectId, Locale } from '../data';
+export type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
 
-export type CosmosView = 'landing' | 'earth' | 'solar' | 'planet';
+export type CosmosView = 'landing' | 'earth' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
 export type CosmosOverlay = 'search' | 'compare' | 'credits' | null;
 export type SimulationTimeScale = 0 | 1 | 10 | 100 | 1_000 | 10_000;
 export type TravelPhase =
@@ -25,15 +25,15 @@ export interface MissionState {
 
 export interface TravelState {
   readonly phase: TravelPhase;
-  readonly originId: CelestialObjectId | null;
-  readonly destinationId: CelestialObjectId | null;
+  readonly originId: CosmicObjectId | null;
+  readonly destinationId: CosmicObjectId | null;
   readonly progress: number;
 }
 
 export interface CosmosState {
   readonly view: CosmosView;
-  readonly selectedObjectId: CelestialObjectId | null;
-  readonly hoveredObjectId: CelestialObjectId | null;
+  readonly selectedObjectId: CosmicObjectId | null;
+  readonly hoveredObjectId: CosmicObjectId | null;
   readonly overlay: CosmosOverlay;
   readonly locale: Locale;
   readonly reducedMotion: boolean;
@@ -47,8 +47,8 @@ export interface CosmosState {
 
 export interface CosmosActions {
   setView: (view: CosmosView) => void;
-  selectObject: (id: CelestialObjectId | null) => void;
-  hoverObject: (id: CelestialObjectId | null) => void;
+  selectObject: (id: CosmicObjectId | null) => void;
+  hoverObject: (id: CosmicObjectId | null) => void;
   openOverlay: (overlay: NonNullable<CosmosOverlay>) => void;
   closeOverlay: () => void;
   setLocale: (locale: Locale) => void;
@@ -62,8 +62,8 @@ export interface CosmosActions {
   markVisited: (id: CelestialObjectId) => void;
   resetMission: () => void;
   startTravel: (
-    destinationId: CelestialObjectId,
-    originId?: CelestialObjectId | null,
+    destinationId: CosmicObjectId,
+    originId?: CosmicObjectId | null,
   ) => void;
   setTravelPhase: (phase: TravelPhase) => void;
   setTravelProgress: (progress: number) => void;
@@ -201,9 +201,9 @@ export const useCosmosStore = create<CosmosStore>()(
           const destinationId = state.travel.destinationId;
           if (!destinationId) return { travel: { ...IDLE_TRAVEL } };
 
-          const visitedObjectIds = state.mission.visitedObjectIds.includes(destinationId)
+          const visitedObjectIds = state.mission.visitedObjectIds.includes(destinationId as CelestialObjectId)
             ? state.mission.visitedObjectIds
-            : [...state.mission.visitedObjectIds, destinationId];
+            : [...state.mission.visitedObjectIds, destinationId as CelestialObjectId];
 
           return {
             view: 'planet',

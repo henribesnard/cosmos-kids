@@ -511,11 +511,8 @@ export const SOLAR_SYSTEM_BODY_BY_ID = Object.freeze(
   Object.fromEntries(SOLAR_SYSTEM_BODIES.map((body) => [body.id, body])),
 ) as Readonly<Record<CelestialObjectId, CelestialBody>>;
 
-const celestialObjectIds = new Set<string>(CELESTIAL_OBJECT_IDS);
-
-export function isCelestialObjectId(value: string): value is CelestialObjectId {
-  return celestialObjectIds.has(value);
-}
+// Re-export from types for backwards compatibility.
+export { isCelestialObjectId } from './types';
 
 export function getBodyById(id: CelestialObjectId): CelestialBody {
   return SOLAR_SYSTEM_BODY_BY_ID[id];
