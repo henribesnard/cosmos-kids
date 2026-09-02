@@ -104,7 +104,7 @@ export const sceneCatalog: Readonly<Record<SceneBodyId, SceneBodyDefinition>> = 
     nameEn: 'Sun',
     kind: 'star',
     color: '#ffcf6b',
-    meanRadiusKm: 696_340,
+    meanRadiusKm: 695_700,
     solarRadius: 4.8,
     detailRadius: 4.8,
     axialTiltDeg: 7.25,
@@ -262,7 +262,7 @@ export const sceneCatalog: Readonly<Record<SceneBodyId, SceneBodyDefinition>> = 
     rotationHours: 16.11,
     flattening: 0.017_08,
     texture: { albedo: texture('neptune-color.jpg') },
-    orbit: { semiMajorAxis: 56, eccentricity: 0.0095, inclinationDeg: 1.77, orbitalPeriodDays: 60_182, phase: phaseAtSnapshot('neptune') },
+    orbit: { semiMajorAxis: 56, eccentricity: 0.0095, inclinationDeg: 1.77, orbitalPeriodDays: 60_190, phase: phaseAtSnapshot('neptune') },
   },
 };
 

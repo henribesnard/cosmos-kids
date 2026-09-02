@@ -287,7 +287,7 @@ export const SOLAR_SYSTEM_BODIES = [
       rotationDirection: 'prograde',
       orbit: {
         primaryId: 'sun',
-        semiMajorAxis: qEarth(149_598_262, 'km', true),
+        semiMajorAxis: qEarth(149_598_023, 'km', true),
         siderealPeriod: qEarth(365.256, 'd', true),
       },
     },
@@ -403,7 +403,7 @@ export const SOLAR_SYSTEM_BODIES = [
       meanRadius: qSaturn(58_232, 'km', true),
       mass: qSaturn(5.6834e26, 'kg', true),
       surfaceGravity: qSaturn(10.44, 'm/s²', true),
-      siderealRotation: qSaturn(10.7, 'h', true),
+      siderealRotation: qSaturn(10.656, 'h', true),
       axialTilt: qSaturn(26.73, 'deg', true),
       meanTemperature: qSaturn(-140, '°C', true),
       rotationDirection: 'prograde',
@@ -493,7 +493,7 @@ export const SOLAR_SYSTEM_BODIES = [
       orbit: {
         primaryId: 'sun',
         semiMajorAxis: qNeptune(4_498_396_441, 'km', true),
-        siderealPeriod: qNeptune(60_182, 'd', true),
+        siderealPeriod: qNeptune(60_190, 'd', true),
       },
     },
     render: {
