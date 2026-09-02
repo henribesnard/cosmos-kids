@@ -33,8 +33,8 @@ export function Header({
   const [destOpen, setDestOpen] = useState(false);
   const destRef = useRef<HTMLDivElement>(null);
   const copy = locale === 'fr'
-    ? { explore: 'Explorer', mission: 'Mission', search: 'Rechercher', progress: 'Progression', destinations: 'Destinations' }
-    : { explore: 'Explore', mission: 'Mission', search: 'Search', progress: 'Progress', destinations: 'Destinations' };
+    ? { explore: 'Explorer', mission: 'Missions', search: 'Rechercher', progress: 'Progression', destinations: 'Destinations' }
+    : { explore: 'Explore', mission: 'Missions', search: 'Search', progress: 'Progress', destinations: 'Destinations' };
 
   useEffect(() => {
     if (!destOpen) return;

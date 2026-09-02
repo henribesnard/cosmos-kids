@@ -4,11 +4,13 @@ import {
   persist,
   type StateStorage,
 } from 'zustand/middleware';
-import type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
+import type { CelestialObjectId, CosmicObjectId, DeepSkyObjectId, Locale } from '../data';
 import type { ConstellationAbbr } from '../data/constellationTypes';
+import type { MissionId } from '../data/missions';
 
-export type { CelestialObjectId, CosmicObjectId, Locale } from '../data';
+export type { CelestialObjectId, CosmicObjectId, DeepSkyObjectId, Locale } from '../data';
 export type { ConstellationAbbr } from '../data/constellationTypes';
+export type { MissionId } from '../data/missions';
 
 export type CosmosView = 'landing' | 'earth' | 'constellations' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
 export type CosmosOverlay = 'search' | 'compare' | 'credits' | null;
@@ -29,6 +31,9 @@ export type TravelDestinationId =
 
 export interface MissionState {
   readonly visitedObjectIds: CelestialObjectId[];
+  readonly visitedDeepSkyIds: DeepSkyObjectId[];
+  readonly visitedConstellationIds: ConstellationAbbr[];
+  readonly activeMissionId: MissionId | null;
 }
 
 export interface TravelState {
@@ -73,6 +78,9 @@ export interface CosmosActions {
   toggleConstellationLines: () => void;
   setTimeScale: (value: SimulationTimeScale) => void;
   markVisited: (id: CelestialObjectId) => void;
+  markVisitedDeepSky: (id: DeepSkyObjectId) => void;
+  markVisitedConstellation: (id: ConstellationAbbr) => void;
+  setActiveMission: (id: MissionId | null) => void;
   resetMission: () => void;
   startTravel: (
     destinationId: TravelDestinationId,
@@ -117,7 +125,12 @@ function createInitialState(): CosmosState {
     showConstellationLines: true,
     timeScale: 1,
     snapshotDate: null,
-    mission: { visitedObjectIds: [] },
+    mission: {
+      visitedObjectIds: [],
+      visitedDeepSkyIds: [],
+      visitedConstellationIds: [],
+      activeMissionId: null,
+    },
     travel: { ...IDLE_TRAVEL },
   };
 }
@@ -180,11 +193,46 @@ export const useCosmosStore = create<CosmosStore>()(
             ? state
             : {
                 mission: {
+                  ...state.mission,
                   visitedObjectIds: [...state.mission.visitedObjectIds, id],
                 },
               },
         ),
-      resetMission: () => set({ mission: { visitedObjectIds: [] } }),
+      markVisitedDeepSky: (id) =>
+        set((state) =>
+          state.mission.visitedDeepSkyIds.includes(id)
+            ? state
+            : {
+                mission: {
+                  ...state.mission,
+                  visitedDeepSkyIds: [...state.mission.visitedDeepSkyIds, id],
+                },
+              },
+        ),
+      markVisitedConstellation: (id) =>
+        set((state) =>
+          state.mission.visitedConstellationIds.includes(id)
+            ? state
+            : {
+                mission: {
+                  ...state.mission,
+                  visitedConstellationIds: [...state.mission.visitedConstellationIds, id],
+                },
+              },
+        ),
+      setActiveMission: (id) =>
+        set((state) => ({
+          mission: { ...state.mission, activeMissionId: id },
+        })),
+      resetMission: () =>
+        set({
+          mission: {
+            visitedObjectIds: [],
+            visitedDeepSkyIds: [],
+            visitedConstellationIds: [],
+            activeMissionId: null,
+          },
+        }),
 
       startTravel: (destinationId, originId) =>
         set((state) => ({
@@ -225,7 +273,7 @@ export const useCosmosStore = create<CosmosStore>()(
     }),
     {
       name: COSMOS_STORE_STORAGE_KEY,
-      version: 1,
+      version: 2,
       storage,
       partialize: (state) => ({
         view: state.view,
@@ -236,6 +284,19 @@ export const useCosmosStore = create<CosmosStore>()(
         snapshotDate: state.snapshotDate,
         mission: state.mission,
       }),
+      migrate: (persisted, version) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const state = persisted as any;
+        if (version < 2) {
+          state.mission = {
+            visitedObjectIds: state.mission?.visitedObjectIds ?? [],
+            visitedDeepSkyIds: [],
+            visitedConstellationIds: [],
+            activeMissionId: null,
+          };
+        }
+        return state as PersistedCosmosState;
+      },
     },
   ),
 );

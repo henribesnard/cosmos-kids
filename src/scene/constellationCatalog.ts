@@ -85,3 +85,34 @@ export function magnitudeToSize(mag: number): number {
 
 /** Type-assert the generated JSON import. */
 export const constellationData = generatedData as unknown as GeneratedConstellationData;
+
+/**
+ * Return the normalised centroid direction of a constellation's stick figure,
+ * or `null` if the constellation has no line data.
+ * The result is a unit vector on a sphere of radius 1.
+ */
+export function getConstellationCentroidDirection(
+  id: string,
+): readonly [number, number, number] | null {
+  const lineGroups = constellationData.constellationLines[id];
+  if (!lineGroups) return null;
+
+  let cx = 0, cy = 0, cz = 0, count = 0;
+  for (const lineString of lineGroups) {
+    for (const [ra, dec] of lineString) {
+      const [x, y, z] = equatorialToCartesian(ra, dec, 1);
+      cx += x;
+      cy += y;
+      cz += z;
+      count++;
+    }
+  }
+
+  if (count === 0) return null;
+  cx /= count;
+  cy /= count;
+  cz /= count;
+  const len = Math.sqrt(cx * cx + cy * cy + cz * cz);
+  if (len < 0.001) return null;
+  return [cx / len, cy / len, cz / len];
+}

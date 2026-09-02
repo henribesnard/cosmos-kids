@@ -2,6 +2,7 @@ import type { SVGProps } from 'react';
 
 export type IconName =
   | 'arrow'
+  | 'arrow-left'
   | 'blackhole'
   | 'calendar'
   | 'check'
@@ -22,6 +23,7 @@ export type IconName =
 
 const paths: Record<IconName, React.ReactNode> = {
   arrow: <path d="m9 18 6-6-6-6m6 6H3" />,
+  'arrow-left': <path d="m15 18-6-6 6-6M9 12h12" />,
   blackhole: <><circle cx="12" cy="12" r="3" fill="currentColor" /><ellipse cx="12" cy="12" rx="10" ry="3.5" /><path d="M4 6c2 2 5 3 8 3s6-1 8-3M4 18c2-2 5-3 8-3s6 1 8 3" /></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" /></>,
   check: <path d="m5 12 4 4L19 6" />,

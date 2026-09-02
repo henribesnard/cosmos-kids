@@ -48,6 +48,7 @@ import { LocalGroupScene } from './LocalGroupScene';
 import { DeepSkyDetail } from './DeepSkyDetail';
 import { isDeepSkyObjectId, type DeepSkyObjectId } from '../data/types';
 import { useCosmosStore } from '../store/useCosmosStore';
+import { getConstellationCentroidDirection } from './constellationCatalog';
 
 /** Public, controlled contract for the production Three/R3F viewport. */
 export interface UniverseViewportProps {
@@ -764,6 +765,7 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
   const target = useRef(new Vector3());
   const snapFrames = useRef(0);
   const preset = sceneCameraPresets[view];
+  const selectedConstellationId = useCosmosStore((s) => s.selectedConstellationId);
 
   /**
    * Snap camera and flush OrbitControls internal damping state.
@@ -806,6 +808,21 @@ function CameraRig({ view, reducedMotion }: { view: UniverseView; reducedMotion:
     }
     invalidate();
   }, [camera, invalidate, preset, reducedMotion, view, snapCamera]);
+
+  // Snap camera toward the selected constellation's centroid
+  useEffect(() => {
+    if (view !== 'constellations' || !selectedConstellationId) return;
+    const dir = getConstellationCentroidDirection(selectedConstellationId);
+    if (!dir) return;
+    const [dx, dy, dz] = dir;
+    // Place camera opposite to centroid direction, looking through origin
+    destination.current.set(-dx * 0.01, -dy * 0.01, -dz * 0.01);
+    target.current.set(0, 0, 0);
+    snapCamera();
+    transition.current = false;
+    snapFrames.current = 4;
+    invalidate();
+  }, [view, selectedConstellationId, snapCamera, invalidate]);
 
   useFrame((_, delta) => {
     // Constellation / reduced-motion snap: force position for a few frames

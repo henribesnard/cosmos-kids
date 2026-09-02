@@ -89,12 +89,12 @@ describe('useCosmosStore', () => {
       version: number;
     };
 
-    expect(persisted.version).toBe(1);
+    expect(persisted.version).toBe(2);
     expect(persisted.state).toMatchObject({
       view: 'solar',
       selectedObjectId: 'jupiter',
       locale: 'en',
-      mission: { visitedObjectIds: ['moon'] },
+      mission: { visitedObjectIds: ['moon'], visitedDeepSkyIds: [], visitedConstellationIds: [], activeMissionId: null },
     });
     expect(persisted.state).not.toHaveProperty('hoveredObjectId');
     expect(persisted.state).not.toHaveProperty('overlay');
@@ -112,5 +112,71 @@ describe('useCosmosStore', () => {
       destinationId: null,
       progress: 0,
     });
+  });
+
+  it('marque un objet deep-sky comme visité sans doublon', () => {
+    const { markVisitedDeepSky } = useCosmosStore.getState();
+    markVisitedDeepSky('orion-nebula');
+    markVisitedDeepSky('orion-nebula');
+
+    expect(useCosmosStore.getState().mission.visitedDeepSkyIds).toEqual(['orion-nebula']);
+  });
+
+  it('marque une constellation comme visitée sans doublon', () => {
+    const { markVisitedConstellation } = useCosmosStore.getState();
+    markVisitedConstellation('Ori');
+    markVisitedConstellation('Ori');
+
+    expect(useCosmosStore.getState().mission.visitedConstellationIds).toEqual(['Ori']);
+  });
+
+  it('change la mission active', () => {
+    const { setActiveMission } = useCosmosStore.getState();
+    setActiveMission('nebula-hunt');
+
+    expect(useCosmosStore.getState().mission.activeMissionId).toBe('nebula-hunt');
+
+    setActiveMission(null);
+    expect(useCosmosStore.getState().mission.activeMissionId).toBeNull();
+  });
+
+  it('resetMission vide toutes les listes et la mission active', () => {
+    const actions = useCosmosStore.getState();
+    actions.markVisited('mars');
+    actions.markVisitedDeepSky('sgr-a');
+    actions.markVisitedConstellation('Cyg');
+    actions.setActiveMission('galaxy-voyage');
+    actions.resetMission();
+
+    const { mission } = useCosmosStore.getState();
+    expect(mission.visitedObjectIds).toEqual([]);
+    expect(mission.visitedDeepSkyIds).toEqual([]);
+    expect(mission.visitedConstellationIds).toEqual([]);
+    expect(mission.activeMissionId).toBeNull();
+  });
+
+  it('migre v1 → v2 en conservant visitedObjectIds', () => {
+    const v1Data = {
+      state: {
+        view: 'solar',
+        selectedObjectId: 'mars',
+        locale: 'en',
+        showOrbits: true,
+        showLabels: true,
+        snapshotDate: null,
+        mission: { visitedObjectIds: ['earth', 'moon'] },
+      },
+      version: 1,
+    };
+    window.localStorage.setItem(COSMOS_STORE_STORAGE_KEY, JSON.stringify(v1Data));
+
+    // Force rehydration
+    useCosmosStore.persist.rehydrate();
+
+    const { mission } = useCosmosStore.getState();
+    expect(mission.visitedObjectIds).toEqual(['earth', 'moon']);
+    expect(mission.visitedDeepSkyIds).toEqual([]);
+    expect(mission.visitedConstellationIds).toEqual([]);
+    expect(mission.activeMissionId).toBeNull();
   });
 });

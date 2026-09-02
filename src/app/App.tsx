@@ -15,6 +15,7 @@ import {
 } from '../data';
 import { CONSTELLATIONS } from '../data/constellations';
 import { isConstellationAbbr, type ConstellationAbbr } from '../data/constellationTypes';
+import { MISSIONS } from '../data/missions';
 import {
   useCosmosStore,
   type CosmosView,
@@ -22,6 +23,7 @@ import {
   type TravelDestinationId,
   type TravelPhase,
 } from '../store';
+import { overallProgress } from '../store/missionSelectors';
 import { computePhasesAtDate } from '../scene/sceneCatalog';
 import { AccessibleObjectList } from '../components/AccessibleObjectList';
 import { CompareDialog } from '../components/CompareDialog';
@@ -215,7 +217,6 @@ const CONSTELLATION_DISPLAY_OBJECTS = CONSTELLATIONS.map(buildConstellationDispl
 const ALL_DISPLAY_OBJECTS = [...SOLAR_DISPLAY_OBJECTS, ...DEEP_SKY_DISPLAY_OBJECTS, ...CONSTELLATION_DISPLAY_OBJECTS];
 
 const DISPLAY_BY_ID = Object.fromEntries(ALL_DISPLAY_OBJECTS.map((object) => [object.id, object])) as Record<string, ObjectDisplay>;
-const MISSION_IDS = ['earth', 'moon', 'mars', 'saturn'] as const;
 
 /* ------------------------------------------------------------------ */
 /*  Route helpers                                                     */
@@ -314,7 +315,8 @@ export function App() {
   const showLabels = useCosmosStore((state) => state.showLabels);
   const timeScale = useCosmosStore((state) => state.timeScale);
   const snapshotDate = useCosmosStore((state) => state.snapshotDate);
-  const visitedObjectIds = useCosmosStore((state) => state.mission.visitedObjectIds);
+  const missionState = useCosmosStore((state) => state.mission);
+  const activeMissionId = useCosmosStore((state) => state.mission.activeMissionId);
   const travel = useCosmosStore((state) => state.travel);
 
   const phaseOverrides = useMemo(() => {
@@ -371,6 +373,7 @@ export function App() {
       state.setView('constellations');
       state.selectObject(null);
       state.selectConstellation(destination);
+      state.markVisitedConstellation(destination);
     } else if (destination === 'solar') {
       state.setView('solar');
       state.selectObject(null);
@@ -391,6 +394,7 @@ export function App() {
     } else if (isDeepSkyObjectId(destination)) {
       state.setView('deepsky');
       state.selectObject(destination);
+      state.markVisitedDeepSky(destination);
     }
     navigate(routeForDestination(destination));
   }, [navigate]);
@@ -459,6 +463,7 @@ export function App() {
     if (isConstellationAbbr(id)) {
       const state = useCosmosStore.getState();
       state.selectConstellation(id);
+      state.markVisitedConstellation(id);
       navigate(`/explore/constellations/${id}`);
       return;
     }
@@ -504,8 +509,7 @@ export function App() {
   const isLanding = view === 'landing';
   const sceneView = toSceneView(view);
 
-  const missionComplete = MISSION_IDS.filter((id) => visitedObjectIds.includes(id)).length;
-  const missionProgress = Math.round((missionComplete / MISSION_IDS.length) * 100);
+  const missionProgress = overallProgress(MISSIONS, missionState);
 
   const activeScaleId =
     view === 'constellations' ? 'constellations'
@@ -605,7 +609,16 @@ export function App() {
                 </>
               )}
             </div>
-            <MissionPanel locale={locale} visited={visitedObjectIds} open={missionOpen} onClose={() => setMissionOpen(false)} onTravel={beginTravel} />
+            <MissionPanel
+              locale={locale}
+              missions={MISSIONS}
+              missionState={missionState}
+              activeMissionId={activeMissionId}
+              open={missionOpen}
+              onClose={() => setMissionOpen(false)}
+              onSelectMission={(id) => useCosmosStore.getState().setActiveMission(id)}
+              onTravel={beginTravel}
+            />
             {currentObject && <InfoPanel key={currentObject.id} locale={locale} object={currentObject} onCompare={() => useCosmosStore.getState().openOverlay('compare')} onClose={() => {
               if (view === 'constellations') navigateDirectly('constellations');
               else if (view === 'planet') navigateDirectly('solar');

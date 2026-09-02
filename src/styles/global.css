@@ -267,8 +267,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .icon-button { align-items: center; background: rgba(255,255,255,.035); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .icon-button:hover { border-color: var(--line-strong); color: var(--cyan); }
 
-.mission-panel { border-radius: 18px; left: 26px; max-height: calc(100% - 210px); overflow: auto; padding: 20px; position: absolute; top: 103px; width: 276px; z-index: 10; }
-.mission-panel__close { display: none; }
+.mission-panel { border-radius: 18px; left: 26px; max-height: calc(100% - 210px); opacity: 0; overflow: auto; padding: 20px; pointer-events: none; position: absolute; top: 103px; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease; width: 296px; z-index: 10; }
+.mission-panel.is-open { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.mission-panel__header { align-items: center; display: flex; justify-content: space-between; margin-bottom: 4px; }
+.mission-panel__title { font-size: 17px; letter-spacing: -.01em; margin: 0; }
+.mission-panel__close { display: inline-flex; }
+
+/* Mission list view (card grid) */
+.mission-list-view__subtitle { color: #7785a2; font-size: 11px; margin: 0 0 12px; }
+.mission-cards { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.mission-card { align-items: center; background: rgba(3,9,22,.42); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; display: flex; gap: 11px; padding: 10px 12px; text-align: left; width: 100%; }
+.mission-card:hover { border-color: var(--line-strong); background: rgba(99,230,255,.04); }
+.mission-card--complete { border-color: rgba(99,230,255,.25); }
+.mission-card__icon { font-size: 20px; flex: 0 0 auto; }
+.mission-card__body { flex: 1; min-width: 0; }
+.mission-card__number { align-items: center; color: var(--cyan); display: flex; font: 600 9px 'Space Grotesk'; gap: 6px; letter-spacing: .1em; }
+.mission-card__badge { background: rgba(99,230,255,.16); border-radius: 4px; color: var(--cyan); font-size: 10px; padding: 0 4px; }
+.mission-card__body b { color: #e0e7f2; display: block; font-size: 12px; font-weight: 500; line-height: 1.25; margin-top: 2px; }
+.mission-card__bar { background: rgba(255,255,255,.08); border-radius: 99px; display: block; height: 3px; margin-top: 6px; overflow: hidden; width: 100%; }
+.mission-card__bar span { background: linear-gradient(90deg, var(--cyan), var(--violet)); display: block; height: 100%; transition: width .5s ease; }
+.mission-card__body small { color: #6a7892; display: block; font-size: 9px; margin-top: 3px; }
+
+/* Mission detail view */
+.mission-back-btn { align-items: center; background: transparent; border: 0; color: var(--cyan); cursor: pointer; display: flex; font-size: 11px; gap: 4px; padding: 0; }
+.mission-back-btn:hover { text-decoration: underline; }
+
+/* Steps list (shared by detail view) */
 .mission-list { display: grid; gap: 1px; list-style: none; margin: 17px 0 16px; padding: 0; }
 .mission-list button { align-items: center; background: transparent; border: 0; border-radius: 9px; cursor: pointer; display: flex; gap: 11px; padding: 8px 6px; text-align: left; width: 100%; }
 .mission-list button:hover { background: rgba(99,230,255,.055); }
@@ -281,8 +305,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .mission-progress span { background: linear-gradient(90deg, var(--cyan), var(--violet)); display: block; height: 100%; transition: width .5s ease; }
 .mission-reward { align-items: center; border-top: 1px solid var(--line); display: flex; gap: 10px; margin-top: 16px; padding-top: 15px; }
 .mission-reward > span:first-child { background: rgba(255,179,92,.1); border: 1px solid rgba(255,179,92,.22); border-radius: 50%; display: grid; height: 34px; place-items: center; width: 34px; }
+.mission-reward--earned > span:first-child { background: rgba(99,230,255,.1); border-color: rgba(99,230,255,.3); box-shadow: 0 0 12px rgba(99,230,255,.15); }
 .mission-reward small, .mission-reward b { display: block; }
 .mission-reward small { color: var(--warning); font: 600 8px 'Space Grotesk'; letter-spacing: .12em; }
+.mission-reward--earned small { color: var(--cyan); }
 .mission-reward b { font-size: 10px; line-height: 1.25; margin-top: 2px; }
 
 .info-panel { border-radius: 20px; overflow: hidden; padding: 24px; position: absolute; right: 26px; top: 103px; width: 356px; z-index: 10; }
@@ -493,7 +519,7 @@ button.galaxy-label:hover { background: rgba(12, 25, 46, .94); box-shadow: 0 0 0
   .main-nav { margin-left: 28px; }
   .search-trigger span, .search-trigger kbd { display: none; }
   .search-trigger { padding: 0; width: 38px; justify-content: center; }
-  .mission-panel { width: 250px; }
+  .mission-panel { width: 270px; }
   .info-panel { width: 320px; }
   .scale-nav { width: 62vw; }
   .landing-hero__content { max-width: 61vw; }

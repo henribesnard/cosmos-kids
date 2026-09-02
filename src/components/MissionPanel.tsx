@@ -1,65 +1,70 @@
 import type { Locale } from '../app/uiTypes';
+import type { MissionDef, MissionId } from '../data/missions';
+import type { MissionState } from '../store/useCosmosStore';
 import { Icon } from './Icon';
-
-interface MissionStep {
-  id: string;
-  label: { fr: string; en: string };
-  detail: { fr: string; en: string };
-}
-
-const steps: MissionStep[] = [
-  { id: 'earth', label: { fr: 'Retrouver la Terre', en: 'Find Earth' }, detail: { fr: 'Notre point de départ', en: 'Our starting point' } },
-  { id: 'moon', label: { fr: 'Visiter la Lune', en: 'Visit the Moon' }, detail: { fr: 'Le satellite de la Terre', en: "Earth's moon" } },
-  { id: 'mars', label: { fr: 'Observer Mars', en: 'Observe Mars' }, detail: { fr: 'La planète rouge', en: 'The red planet' } },
-  { id: 'saturn', label: { fr: 'Trouver les anneaux', en: 'Find the rings' }, detail: { fr: 'Le secret de Saturne', en: "Saturn's secret" } },
-];
+import { MissionListView } from './MissionListView';
+import { MissionDetailView } from './MissionDetailView';
 
 interface MissionPanelProps {
   locale: Locale;
-  visited: string[];
+  missions: readonly MissionDef[];
+  missionState: MissionState;
+  activeMissionId: MissionId | null;
   open: boolean;
   onClose: () => void;
+  onSelectMission: (id: MissionId | null) => void;
   onTravel: (id: string) => void;
 }
 
-export function MissionPanel({ locale, visited, open, onClose, onTravel }: MissionPanelProps) {
+export function MissionPanel({
+  locale,
+  missions,
+  missionState,
+  activeMissionId,
+  open,
+  onClose,
+  onSelectMission,
+  onTravel,
+}: MissionPanelProps) {
   const fr = locale === 'fr';
-  const complete = steps.filter((step) => visited.includes(step.id)).length;
-  const percent = Math.round((complete / steps.length) * 100);
+  const activeMission = activeMissionId
+    ? missions.find((m) => m.id === activeMissionId) ?? null
+    : null;
 
   return (
-    <aside className={`mission-panel glass-panel ${open ? 'is-open' : ''}`} data-scene-obstacle aria-label={fr ? 'Mission en cours' : 'Current mission'}>
-      <div className="panel-heading">
-        <div>
-          <p className="panel-kicker"><Icon name="mission" size={15} /> {fr ? 'MISSION 01' : 'MISSION 01'}</p>
-          <h2>{fr ? 'Notre voisinage spatial' : 'Our space neighbourhood'}</h2>
-        </div>
-        <button className="icon-button mission-panel__close" type="button" onClick={onClose} aria-label={fr ? 'Fermer la mission' : 'Close mission'}>
+    <aside
+      className={`mission-panel glass-panel ${open ? 'is-open' : ''}`}
+      data-scene-obstacle
+      aria-label={fr ? 'Missions' : 'Missions'}
+    >
+      <div className="mission-panel__header">
+        <h2 className="mission-panel__title">{fr ? 'Missions' : 'Missions'}</h2>
+        <button
+          className="icon-button mission-panel__close"
+          type="button"
+          onClick={onClose}
+          aria-label={fr ? 'Fermer' : 'Close'}
+        >
           <Icon name="close" />
         </button>
       </div>
 
-      <ol className="mission-list">
-        {steps.map((step, index) => {
-          const done = visited.includes(step.id);
-          return (
-            <li className={done ? 'is-done' : ''} key={step.id}>
-              <button type="button" onClick={() => onTravel(step.id)}>
-                <span className="mission-check">{done ? <Icon name="check" size={14} /> : index + 1}</span>
-                <span><b>{step.label[locale]}</b><small>{step.detail[locale]}</small></span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-
-      <div className="mission-progress" aria-label={`${percent}%`}>
-        <span style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mission-reward">
-        <span aria-hidden="true">🏅</span>
-        <span><small>{fr ? 'RÉCOMPENSE' : 'REWARD'}</small><b>{fr ? 'Explorateur du Système solaire' : 'Solar System Explorer'}</b></span>
-      </div>
+      {activeMission ? (
+        <MissionDetailView
+          locale={locale}
+          mission={activeMission}
+          missionState={missionState}
+          onBack={() => onSelectMission(null)}
+          onTravel={onTravel}
+        />
+      ) : (
+        <MissionListView
+          locale={locale}
+          missions={missions}
+          missionState={missionState}
+          onSelect={(id) => onSelectMission(id as MissionId)}
+        />
+      )}
     </aside>
   );
 }

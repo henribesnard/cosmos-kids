@@ -365,14 +365,24 @@ function ConstellationLabels({
 function CelestialRotation({
   children,
   reducedMotion,
+  selectedConstellationId,
 }: {
   children: React.ReactNode;
   reducedMotion: boolean;
+  selectedConstellationId: ConstellationAbbr | null;
 }) {
   const groupRef = useRef<Group>(null);
 
+  // Reset rotation when a constellation is selected so that unrotated
+  // centroid coordinates match the visual positions for the camera snap.
+  useEffect(() => {
+    if (selectedConstellationId && groupRef.current) {
+      groupRef.current.rotation.y = 0;
+    }
+  }, [selectedConstellationId]);
+
   useFrame((_, delta) => {
-    if (reducedMotion || !groupRef.current) return;
+    if (reducedMotion || selectedConstellationId || !groupRef.current) return;
     // Very slow rotation to give a sense of a living sky
     groupRef.current.rotation.y += delta * 0.008;
   });
@@ -396,7 +406,7 @@ export function ConstellationScene({
   return (
     <group>
       <ambientLight color="#1a2540" intensity={0.3} />
-      <CelestialRotation reducedMotion={reducedMotion}>
+      <CelestialRotation reducedMotion={reducedMotion} selectedConstellationId={selectedConstellationId}>
         <CelestialSphereStars />
         <ConstellationLines selectedId={selectedConstellationId} visible={showLines} />
         <ConstellationLabels
