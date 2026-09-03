@@ -482,30 +482,49 @@ function FocusHalo({ radius, selected, hovered }: { radius: number; selected: bo
   );
 }
 
-function BodyLabel({ body, radius, emphasized, locale }: { body: SceneBodyDefinition; radius: number; emphasized: boolean; locale: 'fr' | 'en' }) {
+function BodyLabel({ body, emphasized, locale }: { body: SceneBodyDefinition; emphasized: boolean; locale: 'fr' | 'en' }) {
+  const camera = useThree((s) => s.camera);
+  const groupRef = useRef<Group>(null);
+  const offsetRef = useRef(new Vector3());
+
+  // Re-compute label offset each frame so it always faces the camera
+  useFrame(() => {
+    if (!groupRef.current) return;
+    // Direction from body center toward camera, in parent-local space
+    const parent = groupRef.current.parent;
+    if (!parent) return;
+    const worldPos = parent.getWorldPosition(new Vector3());
+    offsetRef.current.copy(camera.position).sub(worldPos).normalize();
+    // Convert to parent-local direction
+    parent.worldToLocal(offsetRef.current.add(worldPos));
+  });
+
   return (
-    <Html position={[0, radius + 1.05, 0]} center zIndexRange={[12, 2]} style={{ pointerEvents: 'none' }}>
-      <div
-        style={{
-          padding: emphasized ? '5px 11px' : '4px 9px',
-          border: `1px solid ${emphasized ? 'rgba(99,230,255,.55)' : 'rgba(150,190,255,.2)'}`,
-          borderRadius: 999,
-          color: sceneRenderConfig.labelColor,
-          background: 'rgba(8,16,34,.56)',
-          boxShadow: '0 2px 12px rgba(0,0,0,.5)',
-          fontFamily: 'Outfit, system-ui, sans-serif',
-          fontSize: emphasized ? 14 : 12,
-          fontWeight: 600,
-          lineHeight: 1.2,
-          whiteSpace: 'nowrap',
-          opacity: emphasized ? 1 : 0.78,
-          backdropFilter: 'blur(5px)',
-          transition: 'opacity .16s ease, border-color .16s ease',
-        }}
-      >
-        {locale === 'fr' ? body.name : body.nameEn}
-      </div>
-    </Html>
+    <group ref={groupRef}>
+      <Html position={[0, 0, 0]} center zIndexRange={[12, 2]} style={{ pointerEvents: 'none' }}>
+        <div
+          style={{
+            transform: 'translateY(-42px)',
+            padding: emphasized ? '5px 11px' : '4px 9px',
+            border: `1px solid ${emphasized ? 'rgba(99,230,255,.55)' : 'rgba(150,190,255,.2)'}`,
+            borderRadius: 999,
+            color: sceneRenderConfig.labelColor,
+            background: 'rgba(8,16,34,.56)',
+            boxShadow: '0 2px 12px rgba(0,0,0,.5)',
+            fontFamily: 'Outfit, system-ui, sans-serif',
+            fontSize: emphasized ? 14 : 12,
+            fontWeight: 600,
+            lineHeight: 1.2,
+            whiteSpace: 'nowrap',
+            opacity: emphasized ? 1 : 0.78,
+            backdropFilter: 'blur(5px)',
+            transition: 'opacity .16s ease, border-color .16s ease',
+          }}
+        >
+          {locale === 'fr' ? body.name : body.nameEn}
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -569,7 +588,7 @@ function CelestialBody({
           {emphasized && !detail ? <FocusHalo radius={radius} selected={selected} hovered={hovered} /> : null}
         </group>
       </group>
-      {showLabels ? <BodyLabel body={body} radius={radius} emphasized={emphasized} locale={locale} /> : null}
+      {showLabels ? <BodyLabel body={body} emphasized={emphasized} locale={locale} /> : null}
     </group>
   );
 }
