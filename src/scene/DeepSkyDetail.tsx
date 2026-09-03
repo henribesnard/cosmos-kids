@@ -342,16 +342,19 @@ function NebulaDetail({
 
 /**
  * Galaxy rendering profiles.
- * Andromeda (M31): large grand-design spiral — prominent bulge, tight arms.
- * Triangulum (M33): smaller, diffuse flocculent spiral — weak bulge, loose arms.
+ * armCount = 0 → irregular galaxy (LMC, SMC).
+ * Spiral arms are distributed by radius using a logarithmic spiral equation
+ * so that particles span the full disk from the inner bulge to maxRadius.
  */
 interface GalaxyProfile {
   particleCount: number;
+  /** Number of spiral arms; 0 for irregular galaxies. */
   armCount: number;
   coreFraction: number;
   coreSpread: [number, number, number];
+  /** Spiral pitch angle in degrees (ignored when armCount === 0). */
   pitchDeg: number;
-  armWind: number;
+  /** Perpendicular spread of arm particles. */
   armSpread: number;
   maxRadius: number;
   diskHeight: number;
@@ -364,30 +367,54 @@ const GALAXY_PROFILES: { [key: string]: GalaxyProfile | undefined } = {
   andromeda: {
     particleCount: 22_000,
     armCount: 2,
-    coreFraction: 0.35,
-    coreSpread: [2.5, 0.7, 2.0],
+    coreFraction: 0.25,
+    coreSpread: [1.8, 0.5, 1.5],
     pitchDeg: 11,
-    armWind: 5.0,
-    armSpread: 0.6,
+    armSpread: 0.7,
     maxRadius: 9,
     diskHeight: 0.12,
     tilt: [1.2, 0, 0.15],
-    coreGlowRadius: 1.2,
-    coreGlowOpacity: 0.35,
+    coreGlowRadius: 1.0,
+    coreGlowOpacity: 0.3,
   },
   triangulum: {
     particleCount: 8_000,
     armCount: 3,
-    coreFraction: 0.15,
-    coreSpread: [1.2, 0.3, 1.0],
+    coreFraction: 0.12,
+    coreSpread: [0.8, 0.25, 0.7],
     pitchDeg: 17,
-    armWind: 3.5,
-    armSpread: 1.4,
+    armSpread: 1.2,
     maxRadius: 6,
-    diskHeight: 0.25,
+    diskHeight: 0.20,
     tilt: [0.4, 0, 0.5],
+    coreGlowRadius: 0.4,
+    coreGlowOpacity: 0.15,
+  },
+  lmc: {
+    particleCount: 14_000,
+    armCount: 0,
+    coreFraction: 0.20,
+    coreSpread: [2.0, 0.6, 1.5],
+    pitchDeg: 0,
+    armSpread: 0,
+    maxRadius: 7,
+    diskHeight: 0.35,
+    tilt: [0.6, 0, 0.25],
+    coreGlowRadius: 0.8,
+    coreGlowOpacity: 0.2,
+  },
+  smc: {
+    particleCount: 8_000,
+    armCount: 0,
+    coreFraction: 0.25,
+    coreSpread: [1.5, 0.6, 1.2],
+    pitchDeg: 0,
+    armSpread: 0,
+    maxRadius: 5,
+    diskHeight: 0.5,
+    tilt: [0.35, 0.15, 0.4],
     coreGlowRadius: 0.5,
-    coreGlowOpacity: 0.18,
+    coreGlowOpacity: 0.15,
   },
 };
 
@@ -424,11 +451,12 @@ function GalaxyMiniDetail({
     const random = createSeededRandom(seed);
 
     const coreEnd = Math.floor(count * profile.coreFraction);
-    const pitchTan = Math.tan(profile.pitchDeg * Math.PI / 180);
+    const pitchTan = profile.pitchDeg > 0 ? Math.tan(profile.pitchDeg * Math.PI / 180) : 1;
+    const rMin = 0.5;
 
     for (let i = 0; i < count; i++) {
       if (i < coreEnd) {
-        // Core / bulge region
+        // Core / bulge region — Gaussian distribution
         const bx = (random() - 0.5 + random() - 0.5) * profile.coreSpread[0];
         const by = (random() - 0.5 + random() - 0.5) * profile.coreSpread[1];
         const bz = (random() - 0.5 + random() - 0.5) * profile.coreSpread[2];
@@ -437,22 +465,48 @@ function GalaxyMiniDetail({
         positions[i * 3 + 2] = bz;
         tmpC.copy(coreColor);
         sizes[i] = 0.6 + random() * 1.0;
+      } else if (profile.armCount === 0) {
+        // Irregular galaxy — lumpy disk distribution
+        const rFrac = Math.pow(random(), 0.5);
+        const r = 0.3 + rFrac * (profile.maxRadius - 0.3);
+        const angle = random() * Math.PI * 2;
+        const lump = Math.sin(angle * 3 + r * 0.5) * 0.3 + 0.7;
+        const xOff = (random() - 0.5) * r * 0.3;
+        const zOff = (random() - 0.5) * r * 0.3;
+        positions[i * 3] = Math.cos(angle) * r * lump + xOff;
+        positions[i * 3 + 1] = (random() - 0.5 + random() - 0.5) * 0.5 * profile.diskHeight * (1 + rFrac);
+        positions[i * 3 + 2] = Math.sin(angle) * r * lump + zOff;
+        tmpC.copy(armColor).lerp(baseColor, random() * 0.6);
+        sizes[i] = 0.4 + random() * 0.9;
       } else {
-        // Spiral arm particles
-        const t = (i - coreEnd) / (count - coreEnd);
-        const armIndex = Math.floor(random() * profile.armCount);
-        const armOffset = (armIndex / profile.armCount) * Math.PI * 2;
-        const theta = armOffset + t * profile.armWind;
-        const rSpiral = 0.5 * Math.exp((theta - armOffset) * pitchTan);
-        const rClamped = Math.min(rSpiral, profile.maxRadius);
-        const spread = (random() - 0.5) * profile.armSpread;
-        const perpAngle = theta + Math.PI / 2;
+        // Spiral arm particles — distribute by radius, compute spiral angle
+        const rFrac = Math.pow(random(), 0.6);
+        const r = rMin + rFrac * (profile.maxRadius - rMin);
 
-        positions[i * 3] = Math.cos(theta) * rClamped + Math.cos(perpAngle) * spread;
+        let px: number, pz: number;
+
+        if (random() < 0.15) {
+          // 15 % diffuse inter-arm disk particles
+          const angle = random() * Math.PI * 2;
+          px = Math.cos(angle) * r;
+          pz = Math.sin(angle) * r;
+        } else {
+          const armIndex = Math.floor(random() * profile.armCount);
+          const armOffset = (armIndex / profile.armCount) * Math.PI * 2;
+          // Logarithmic spiral: angle = ln(r/r0) / tan(pitch)
+          const spiralAngle = armOffset + Math.log(r / rMin) / pitchTan;
+          const spreadAmount = profile.armSpread * (0.3 + 0.7 * rFrac);
+          const spread = (random() - 0.5 + random() - 0.5) * 0.5 * spreadAmount;
+          const perpAngle = spiralAngle + Math.PI / 2;
+          px = Math.cos(spiralAngle) * r + Math.cos(perpAngle) * spread;
+          pz = Math.sin(spiralAngle) * r + Math.sin(perpAngle) * spread;
+        }
+
+        positions[i * 3] = px;
         positions[i * 3 + 1] = (random() - 0.5) * profile.diskHeight;
-        positions[i * 3 + 2] = Math.sin(theta) * rClamped + Math.sin(perpAngle) * spread;
+        positions[i * 3 + 2] = pz;
         tmpC.copy(armColor).lerp(baseColor, random() * 0.5);
-        sizes[i] = 0.4 + random() * 0.8;
+        sizes[i] = 0.3 + random() * 0.7 * (1 - rFrac * 0.3);
       }
 
       colors[i * 3] = tmpC.r;
