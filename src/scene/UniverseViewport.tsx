@@ -588,7 +588,7 @@ function CelestialBody({
           {emphasized && !detail ? <FocusHalo radius={radius} selected={selected} hovered={hovered} /> : null}
         </group>
       </group>
-      {showLabels ? <BodyLabel body={body} emphasized={emphasized} locale={locale} /> : null}
+      {showLabels && !detail ? <BodyLabel body={body} emphasized={emphasized} locale={locale} /> : null}
     </group>
   );
 }
