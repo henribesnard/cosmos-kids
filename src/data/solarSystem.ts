@@ -3,6 +3,7 @@ import {
   type CelestialObjectId,
   type Locale,
   type LocalizedText,
+  type OrbitalFacility,
   type PlanetId,
   type ScientificQuantity,
   type ScientificUnit,
@@ -505,6 +506,43 @@ export const SOLAR_SYSTEM_BODIES = [
     },
   },
 ] as const satisfies readonly CelestialBody[];
+
+const issSource = 'https://www.nasa.gov/international-space-station/space-station-facts-and-figures/';
+const qIss = <Unit extends 'km' | 'km/s' | 'min'>(
+  value: number,
+  unit: Unit,
+): ScientificQuantity<Unit> => ({
+  value,
+  unit,
+  approximate: true,
+  sourceUrl: issSource,
+  attribution: 'NASA',
+  retrievedAt: '2026-09-05',
+});
+
+/**
+ * The ISS is a real navigable destination, kept outside the planet render
+ * catalogue because this lot must not invent a new 3D representation.
+ */
+export const INTERNATIONAL_SPACE_STATION: OrbitalFacility = {
+  id: 'iss',
+  kind: 'space-station',
+  name: T('Station spatiale internationale', 'International Space Station'),
+  shortDescription: T(
+    'Un laboratoire habité qui tourne autour de la Terre en orbite basse.',
+    'A crewed laboratory orbiting Earth in low Earth orbit.',
+  ),
+  funFact: T(
+    'Son équipage voit environ 16 levers et couchers de Soleil chaque jour.',
+    'Its crew sees about 16 sunrises and sunsets every day.',
+  ),
+  altitude: qIss(420, 'km'),
+  orbitalSpeed: qIss(7.8, 'km/s'),
+  orbitalPeriod: qIss(90, 'min'),
+  sourceUrl: issSource,
+  attribution: 'NASA',
+  retrievedAt: '2026-09-05',
+};
 
 export const SOLAR_SYSTEM_BODY_BY_ID = Object.freeze(
   Object.fromEntries(SOLAR_SYSTEM_BODIES.map((body) => [body.id, body])),

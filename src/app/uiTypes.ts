@@ -1,12 +1,10 @@
-export type Locale = 'fr' | 'en';
+import type { MissionStepTarget } from '../data/journeyTypes';
+import type { LocalizedText } from '../data/types';
 
-export interface LocalizedText {
-  fr: string;
-  en: string;
-}
+export type { Locale, LocalizedText } from '../data/types';
 
 export interface ObjectDisplay {
-  id: string;
+  id: MissionStepTarget;
   name: LocalizedText;
   kind: LocalizedText;
   tagline: LocalizedText;
@@ -24,4 +22,3 @@ export interface ObjectDisplay {
 }
 
 export type OverlayName = 'search' | 'compare' | 'credits' | null;
-

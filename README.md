@@ -8,8 +8,11 @@ COSMOS KIDS est une exploration 3D éducative de l’Univers destinée aux 7–1
 - vue Terre + Lune, vue complète du Système solaire et fiche détaillée pour chaque monde ;
 - Soleil, Lune et huit planètes texturés ; Terre multicouche et anneaux de Saturne séparés ;
 - vue de la Voie lactée avec bras spiraux, objets du ciel profond et passage vers le Groupe local ;
-- recherche clavier (`Ctrl/Cmd + K`), voyage animé, mission de voisinage, comparaison et crédits ;
-- routes partageables, par exemple `/explore/solar-system/saturn` ;
+- sept trajets pédagogiques non rétroactifs, de l’ISS aux constellations observables ce soir ;
+- comparateur de durées, dangers à plusieurs niveaux, quiz et checklist dans le monde réel ;
+- carnet de découverte local avec date de première visite, sans compte ni suivi distant ;
+- recherche clavier (`Ctrl/Cmd + K`), voyage animé, comparaison et crédits ;
+- routes partageables, par exemple `/explore/solar-system/saturn`, `/trajets/earth-to-moon` et `/carnet` ;
 - français et anglais, navigation DOM accessible, préférence de mouvement réduit et fallback WebGL ;
 - snapshot orbital JPL Horizons au build, sans requête d’API dans le navigateur ;
 - assets locaux accompagnés d’un manifeste, d’une licence et de sommes SHA‑256.
@@ -35,7 +38,7 @@ Le port est volontairement verrouillé sur `4173`. Si le terminal indique qu’i
 npm run verify
 ```
 
-Cette commande vérifie les assets, exécute ESLint, les 13 tests Vitest et le build de production. Les commandes unitaires restent disponibles :
+Cette commande vérifie les assets, exécute ESLint, toute la suite Vitest et le build de production. Les commandes unitaires restent disponibles :
 
 ```bash
 npm run typecheck
@@ -69,6 +72,8 @@ En cas d’indisponibilité de JPL, le script conserve le dernier snapshot compl
 - [`src/app/App.tsx`](./src/app/App.tsx) : routes et orchestration des parcours ;
 - [`src/scene/UniverseViewport.tsx`](./src/scene/UniverseViewport.tsx) : scène React Three Fiber ;
 - [`src/data/solarSystem.ts`](./src/data/solarSystem.ts) : catalogue scientifique et provenance par valeur ;
+- [`src/data/journeys.ts`](./src/data/journeys.ts) : les sept trajets et leurs sources figées au build ;
+- [`src/domain/missionEngine.ts`](./src/domain/missionEngine.ts) : progression événementielle non rétroactive ;
 - [`src/generated/ephemeris.json`](./src/generated/ephemeris.json) : cache JPL utilisé au runtime ;
 - [`data/manifests/assets.manifest.json`](./data/manifests/assets.manifest.json) : catalogue runtime des images ;
 - [`docs/DATA_SOURCES.md`](./docs/DATA_SOURCES.md) et [`ATTRIBUTIONS.md`](./ATTRIBUTIONS.md) : sources, transformations et licences.

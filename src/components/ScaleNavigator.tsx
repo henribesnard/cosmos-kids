@@ -1,4 +1,6 @@
 import type { Locale } from '../app/uiTypes';
+import type { ScaleLevelId } from '../data/journeyTypes';
+import { publish } from '../domain/events';
 import { Icon } from './Icon';
 
 const destinations = [
@@ -11,8 +13,8 @@ const destinations = [
 
 interface ScaleNavigatorProps {
   locale: Locale;
-  activeId: string;
-  onTravel: (id: string) => void;
+  activeId: ScaleLevelId | string;
+  onTravel: (id: ScaleLevelId) => void;
 }
 
 export function ScaleNavigator({ locale, activeId, onTravel }: ScaleNavigatorProps) {
@@ -27,7 +29,10 @@ export function ScaleNavigator({ locale, activeId, onTravel }: ScaleNavigatorPro
             aria-current={isActive ? 'location' : undefined}
             className={isActive ? 'is-active' : ''}
             key={destination.id}
-            onClick={() => onTravel(destination.id)}
+            onClick={() => {
+              publish({ type: 'SCALE_CHANGED', level: destination.id });
+              onTravel(destination.id);
+            }}
             type="button"
           >
             <i aria-hidden="true" />

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALL_COSMIC_IDS, DEEP_SKY_BY_ID, isCelestialObjectId, SOLAR_SYSTEM_BODY_BY_ID } from '../data';
 import { useCosmosStore } from '../store';
@@ -16,7 +16,12 @@ vi.mock('../scene/UniverseViewport', () => ({
 }));
 
 function renderAt(pathname: string) {
-  return render(<MemoryRouter initialEntries={[pathname]}><App /></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[pathname]}><LocationProbe /><App /></MemoryRouter>);
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-path" hidden>{location.pathname}</output>;
 }
 
 describe('parcours V1', () => {
@@ -50,6 +55,17 @@ describe('parcours V1', () => {
     renderAt('/explore/solar-system');
     const catalogue = await screen.findByRole('region', { name: /Liste accessible des mondes visibles/i });
     expect(within(catalogue).getByRole('button', { name: /Lune — Satellite naturel/i })).toBeInTheDocument();
+  });
+
+  it('rend la destination ISS au clavier depuis la liste accessible', async () => {
+    useCosmosStore.getState().setReducedMotion(true);
+    renderAt('/explore/earth');
+
+    const catalogue = await screen.findByRole('region', { name: /Liste accessible des mondes visibles/i });
+    fireEvent.click(within(catalogue).getByRole('button', { name: /Station spatiale internationale — Station orbitale/i }));
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Station spatiale internationale' })).toBeInTheDocument());
+    expect(useCosmosStore.getState().mission.visitedSpecialIds).toContain('iss');
   });
 
   it('ouvre la vue détaillée avec un clic simple sur un astre 3D', async () => {
@@ -121,6 +137,55 @@ describe('parcours V1', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('rend toutes les constellations visibles accessibles au clavier', async () => {
+    renderAt('/explore/constellations');
+
+    const catalogue = await screen.findByRole('region', { name: /Liste accessible des mondes visibles/i });
+    fireEvent.click(within(catalogue).getByRole('button', { name: /Orion — Constellation/i }));
+
+    await waitFor(() => expect(useCosmosStore.getState().selectedConstellationId).toBe('Ori'));
+    expect(screen.getByRole('heading', { name: 'Orion' })).toBeInTheDocument();
+  });
+
+  it('rend le marqueur du Soleil de la Voie lactée accessible au clavier', async () => {
+    useCosmosStore.getState().setReducedMotion(true);
+    renderAt('/explore/milky-way');
+
+    const catalogue = await screen.findByRole('region', { name: /Liste accessible des mondes visibles/i });
+    fireEvent.click(within(catalogue).getByRole('button', { name: /Soleil — Étoile/i }));
+
+    await waitFor(() => expect(useCosmosStore.getState().view).toBe('solar'));
+  });
+
+  it('restaure une URL de comparaison et valide sa fermeture avec Échap', async () => {
+    useCosmosStore.getState().startJourney('earth-to-moon');
+    renderAt('/compare/earth/moon');
+
+    const dialog = await screen.findByRole('dialog', { name: /Comparer deux mondes/i });
+    expect(within(dialog).getByText('Terre')).toBeInTheDocument();
+    expect(within(dialog).getByRole('combobox', { name: 'Second monde' })).toHaveValue('moon');
+    expect(useCosmosStore.getState().view).toBe('earth');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Comparer deux mondes/i })).not.toBeInTheDocument());
+    expect(useCosmosStore.getState().mission.runs['earth-to-moon']?.completedStepIds)
+      .toContain('moon-compare');
+  });
+
+  it('conserve le second objet choisi dans l’URL de comparaison', async () => {
+    renderAt('/compare/earth/moon');
+
+    const dialog = await screen.findByRole('dialog', { name: /Comparer deux mondes/i });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Second monde' }), {
+      target: { value: 'mars' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('location-path')).toHaveTextContent('/compare/earth/mars'));
+    expect(within(screen.getByRole('dialog', { name: /Comparer deux mondes/i }))
+      .getByRole('combobox', { name: 'Second monde' })).toHaveValue('mars');
+  });
+
   it.each(ALL_COSMIC_IDS)('r\u00E9sout le bon titre de voyage pour %s', (destinationId) => {
     const object = isCelestialObjectId(destinationId)
       ? SOLAR_SYSTEM_BODY_BY_ID[destinationId]
@@ -134,5 +199,54 @@ describe('parcours V1', () => {
     renderAt('/credits');
     expect(await screen.findByRole('heading', { name: 'Sources & crédits' })).toBeInTheDocument();
     expect(screen.getByText(/Creative Commons Attribution 4.0/i)).toBeInTheDocument();
+  });
+
+  it('ouvre un trajet, le démarre puis valide la visite de la Lune', async () => {
+    useCosmosStore.getState().setReducedMotion(true);
+    renderAt('/trajets/earth-to-moon');
+
+    expect(await screen.findByRole('heading', { name: 'Terre → Lune' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Démarrer ce trajet' }));
+    await waitFor(() => expect(
+      useCosmosStore.getState().mission.runs['earth-to-moon']?.completedStepIds,
+    ).toContain('moon-visit-earth'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Y aller' }));
+    await waitFor(() => expect(
+      useCosmosStore.getState().mission.runs['earth-to-moon']?.completedStepIds,
+    ).toContain('moon-visit-moon'));
+  });
+
+  it('ne transforme pas en progrès un voyage fait avant le démarrage', async () => {
+    useCosmosStore.getState().setReducedMotion(true);
+    renderAt('/explore/solar-system/moon');
+    await waitFor(() => expect(useCosmosStore.getState().mission.visitedObjectIds).toContain('moon'));
+
+    const mainNavigation = screen.getByRole('navigation', { name: 'Explorer' });
+    fireEvent.click(within(mainNavigation).getByRole('button', { name: 'Trajets' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Terre → Lune/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Démarrer ce trajet' }));
+
+    expect(useCosmosStore.getState().mission.runs['earth-to-moon']?.completedStepIds)
+      .not.toContain('moon-visit-moon');
+  });
+
+  it('présente le trou noir comme une simulation et jamais comme un voyage réel', async () => {
+    renderAt('/trajets/into-a-black-hole');
+
+    expect(await screen.findByText(/Personne ne peut le faire, et personne ne pourrait revenir/)).toBeInTheDocument();
+    expect(screen.getByText(/Simulation — visualisation éducative/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Démarrer l’exploration simulée/i }));
+    expect(screen.queryByRole('button', { name: 'Y aller' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Voir la simulation/i }).length).toBeGreaterThan(0);
+  });
+
+  it('restaure le carnet depuis son URL et affiche la date de première visite', async () => {
+    useCosmosStore.getState().recordDiscovery('mars', new Date('2026-09-06T10:00:00Z').getTime());
+    renderAt('/carnet');
+
+    expect(await screen.findByRole('heading', { name: 'Carnet de découverte' })).toBeInTheDocument();
+    expect(screen.getByText('Mars')).toBeInTheDocument();
+    expect(screen.getByText('Planète')).toBeInTheDocument();
   });
 });

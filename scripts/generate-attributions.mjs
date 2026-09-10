@@ -164,6 +164,54 @@ The interface must keep these two layers explicit:
 ${caveats}
 
 These media packs provide a coherent visual baseline, not a time-resolved or uniformly instrument-traceable scientific dataset. UI copy must distinguish natural color, enhanced color, radar-derived views, composites, artist impressions, and reconstructed areas.
+
+## Journey catalogue
+
+Journey facts are frozen at build time; the browser performs no source request. Each scientific quantity stores its URL, attribution, retrieval date and approximation flag. Unless stated otherwise below, the catalogue was checked on 2026-09-05.
+
+| Scope | Primary source | Used for |
+| --- | --- | --- |
+| ISS | [NASA — Space Station Facts and Figures](https://www.nasa.gov/international-space-station/space-station-facts-and-figures/) | approximate altitude, orbital speed and period, continuous presence, daily sunrises |
+| ISS vehicles | [NASA — Visiting Vehicles](https://www.nasa.gov/international-space-station/space-station-visiting-vehicles/) | Soyuz and cargo rendezvous context |
+| Crew Dragon | [NASA — Crew-3](https://www.nasa.gov/humans-in-space/what-you-need-to-know-about-nasas-spacex-crew-3-mission/) | representative crewed rendezvous |
+| Orbital debris | [ESA — Space Environment Report 2025](https://www.esa.int/Space_Safety/Space_Debris/ESA_Space_Environment_Report_2025) | current order of magnitude for debris larger than 10 cm |
+| Low-Earth-orbit radiation | [NASA — Orion Passengers on Artemis I](https://www.nasa.gov/missions/artemis/orion/orion-passengers-on-artemis-i-to-test-radiation-vest-for-deep-space-missions/) | comparison between ground and ISS radiation exposure |
+| Earth atmosphere | [NASA — Earth’s Atmosphere](https://science.nasa.gov/earth/earth-atmosphere/) | troposphere altitude |
+| Boundary of space | [FAI — Statement about the Kármán Line](https://www.fai.org/page/icare-boundary-space) | conventional 100 km boundary |
+| Moon | [NASA — Moon Facts](https://science.nasa.gov/moon/facts/) | mean distance, gravity and surface temperatures |
+| Lunar missions | [NASA — Moon Missions](https://science.nasa.gov/moon/missions/) | robotic chronology through IM-2/Athena on March 6, 2025 (checked 2026-09-06) |
+| Apollo 11 | [NASA — Mission Overview](https://www.nasa.gov/history/apollo-11-mission-overview/) and [Lunar Surface Journal](https://www.nasa.gov/wp-content/uploads/static/history/alsj/a11/a11.landing.html) | flight sequence, lunar arrival and post-flight estimate of landing propellant |
+| Artemis II | [NASA — Artemis II](https://www.nasa.gov/mission/artemis-ii/) | April 2026 crewed lunar flyby and crew |
+| Lunar dust | [NASA — Dust: An Out-of-This-World Problem](https://www.nasa.gov/humans-in-space/dust-an-out-of-this-world-problem/) | abrasive and electrostatic lunar regolith |
+| Mars | [NASA — Mars Relay Network](https://science.nasa.gov/mars/mars-relay-network/) | 54.6–400.2 million km range and 3–22.4 minute light delay |
+| Mars exploration | [NASA — Mars](https://science.nasa.gov/mars/) | cruise, entry and surface environment |
+| Future human Mars exploration | [NASA — Moon to Mars](https://www.nasa.gov/humans-in-space/moon-to-mars/) | future status of crewed Mars projects |
+| Mars radiation | [NASA — Curiosity Radiation Results](https://www.nasa.gov/news-release/nasa-rover-results-include-first-age-measurement-on-mars-and-help-for-human-exploration/) | surface radiation measurement |
+| Mars atmosphere | [NASA — Present-day Mars Atmosphere](https://www.nasa.gov/news-release/mars-terraforming-not-possible-using-present-day-technology/) | approximately 0.6% terrestrial pressure and behaviour of liquid water (checked 2026-09-06) |
+| First Mars flyby | [NASA — Mariner 4](https://science.nasa.gov/mission/mariner-4/) | first successful robotic flyby in 1965 |
+| Ingenuity | [NASA/JPL — Mission Ends](https://www.jpl.nasa.gov/news/after-three-years-on-mars-nasas-ingenuity-helicopter-mission-ends/) | January 2024 end of mission |
+| Mars robots | [NASA — 25 Years of Continuous Robotic Mars Exploration](https://www.nasa.gov/history/25-years-of-continuous-robotic-mars-exploration-from-pathfinder-to-perseverance/) | Mariner, Viking, Curiosity, Perseverance, Ingenuity and Zhurong chronology |
+| Solar System | [NASA — Solar System Exploration](https://science.nasa.gov/solar-system/) | outer-planet distances, environments and Solar System journey legs |
+| Jupiter | [NASA/JPL — Juno](https://www.jpl.nasa.gov/missions/juno/) | approximately five-year cruise and radiation environment |
+| Juno shielding | [NASA/JPL — Installing Juno’s Radiation Vault](https://www.jpl.nasa.gov/images/pia13258-installing-junos-radiation-vault/) | approximately 200 kg titanium radiation vault |
+| Cassini mission | [NASA — Cassini Timeline](https://science.nasa.gov/mission/cassini/the-journey/timeline/) | approximately 6.7-year cruise and gravity assists |
+| Saturn | [NASA — Saturn Facts](https://science.nasa.gov/saturn/facts/) | approximate distance, light time, and ring composition and particle sizes |
+| Pluto | [NASA — New Horizons](https://science.nasa.gov/mission/new-horizons/) | more than nine-year cruise and radioisotope power |
+| Uranus and Neptune | [NASA — Voyager 2](https://science.nasa.gov/mission/voyager/voyager-2/) | only spacecraft to visit all four giant planets |
+| Interstellar boundary | [NASA — Voyager Interstellar Mission](https://science.nasa.gov/mission/voyager/interstellar-mission/) | Voyager 1 heliopause crossing in 2012 |
+| Andromeda | [NASA/Hubble — 2025 reassessment](https://science.nasa.gov/missions/hubble/apocalypse-when-hubble-casts-doubt-on-certainty-of-galactic-collision/) | distance and roughly 50% collision probability within ten billion years |
+| Galaxies | [NASA/Hubble — Universe Uncovered](https://science.nasa.gov/mission/hubble/science/universe-uncovered/hubble-galaxies/) | limits of human intergalactic travel |
+| Universe | [NASA — Universe Overview](https://science.nasa.gov/universe/overview/) | approximately 13.8-billion-year age comparison |
+| Black holes | [NASA — Black Holes](https://science.nasa.gov/universe/black-holes/) | horizon, tidal forces and Sagittarius A* |
+| Approaching a black hole | [NASA — What Happens When Something Gets Too Close?](https://science.nasa.gov/universe/what-happens-when-something-gets-too-close-to-a-black-hole/) | gravitational time dilation (checked 2026-09-06) |
+| Nearby black hole | [ESA — Gaia BH1](https://www.esa.int/Science_Exploration/Space_Science/Gaia/Gaia_discovers_a_new_family_of_black_holes) | approximately 1,560 light-year distance |
+| Black-hole images | [Event Horizon Telescope — M87*](https://eventhorizontelescope.org/press-release-april-10-2019-astronomers-capture-first-image-black-hole) and [Sgr A*](https://eventhorizontelescope.org/blog/astronomers-reveal-first-image-black-hole-heart-our-galaxy) | 2019 and 2022 images; luminous environment and shadow |
+| Constellations | [IAU — Astronomy FAQ](https://www.iau.org/IAU/Astronomy-FAQs/FAQs.aspx) | 88 official constellations |
+| Orion | [NASA — Orion in three dimensions](https://science.nasa.gov/universe/stories/quick-reads/discovering-the-universe-through-the-constellation-orion/) | stars are not neighbours; approximate distances for Betelgeuse, Alnitak and Rigel |
+| Night vision | [NASA — Night Sky Notes](https://science.nasa.gov/solar-system/skywatching/night-sky-network/may2024-night-sky-notes/) | dark adaptation and observing away from bright lights |
+| Gaia | [ESA — Gaia](https://www.esa.int/Science_Exploration/Space_Science/Gaia) | catalogue scale and end of science observations in January 2025 |
+
+Conventional walking, car and airliner speeds are deliberately labelled as thought experiments. Parker Solar Probe’s approximately 192 km/s value is explicitly a brief peak near perihelion, sourced from [NASA’s Parker Solar Probe mission page](https://science.nasa.gov/mission/parker-solar-probe/), and never described as cruise performance.
 `;
 }
 

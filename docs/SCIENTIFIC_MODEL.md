@@ -30,3 +30,16 @@ Les textures Solar System Scope sont très utiles visuellement mais ne possèden
 
 Aucune valeur scientifique nouvelle ne doit être ajoutée directement dans un composant d’interface. Elle doit d’abord entrer dans `src/data` avec source et unité. Une approximation doit porter `approximate: true`.
 
+## Trajets
+
+Chaque trajet sépare explicitement distance, durées comparées, étapes physiques, dangers, précédent humain et précédent robot. Son statut de faisabilité est une information scientifique et pédagogique à part entière :
+
+- `done-by-humans` : des humains l’ont réellement accompli ;
+- `done-by-robots-only` : seules des machines l’ont accompli ;
+- `out-of-reach` : permis par la physique, hors de portée de nos machines ;
+- `impossible-today` : aucun retour possible avec les connaissances actuelles ;
+- `do-it-tonight` : observation réalisable directement par l’enfant.
+
+Les vues associées aux deux statuts non réalisables portent « simulation » et ne proposent jamais l’action « Y aller ». Les distances variables utilisent une valeur typique uniquement pour comparer les durées et expliquent pourquoi la distance change.
+
+La vitesse de Parker Solar Probe est un pic atteint près du Soleil, pas une vitesse de croisière. Toute durée extrapolée avec cette valeur porte donc une note visible. Les vitesses conventionnelles de marche, voiture et avion ne décrivent pas des véhicules spatialement capables : leurs notes et le statut de faisabilité empêchent cette confusion.

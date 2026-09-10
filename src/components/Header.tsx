@@ -14,8 +14,9 @@ interface HeaderProps {
   onExplore: () => void;
   onSearch: () => void;
   onMission: () => void;
+  onLog: () => void;
   onLocale: (locale: Locale) => void;
-  onTravel: (id: string) => void;
+  onTravel: (id: ObjectDisplay['id']) => void;
 }
 
 export function Header({
@@ -27,14 +28,15 @@ export function Header({
   onExplore,
   onSearch,
   onMission,
+  onLog,
   onLocale,
   onTravel,
 }: HeaderProps) {
   const [destOpen, setDestOpen] = useState(false);
   const destRef = useRef<HTMLDivElement>(null);
   const copy = locale === 'fr'
-    ? { explore: 'Explorer', mission: 'Missions', search: 'Rechercher', progress: 'Progression', destinations: 'Destinations' }
-    : { explore: 'Explore', mission: 'Missions', search: 'Search', progress: 'Progress', destinations: 'Destinations' };
+    ? { explore: 'Explorer', mission: 'Trajets', log: 'Carnet', search: 'Rechercher', progress: 'Progression', destinations: 'Destinations' }
+    : { explore: 'Explore', mission: 'Journeys', log: 'Logbook', search: 'Search', progress: 'Progress', destinations: 'Destinations' };
 
   useEffect(() => {
     if (!destOpen) return;
@@ -74,9 +76,18 @@ export function Header({
           <button className="main-nav__item" type="button" onClick={onMission}>
             {copy.mission}
           </button>
+          <button className="main-nav__item" type="button" onClick={onLog}>
+            {copy.log}
+          </button>
         </nav>
       )}
       <div className="topbar__tools">
+        {!isLanding && (
+          <div className="mobile-route-nav">
+            <button type="button" onClick={onMission} aria-label={copy.mission}><Icon name="mission" size={17} /></button>
+            <button type="button" onClick={onLog} aria-label={copy.log}><Icon name="calendar" size={17} /></button>
+          </div>
+        )}
         {!isLanding && (
           <button className="search-trigger" type="button" onClick={onSearch}>
             <Icon name="search" size={17} />

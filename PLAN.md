@@ -1,5 +1,16 @@
 # Plan : Extension de l'univers Cosmos Kids
 
+## Refonte Trajets — septembre 2026
+
+- [x] Lot 1 — calculs purs et tests de formatage
+- [x] Lot 2 — modèle sourcé, ISS, comparateur et deux premiers trajets
+- [x] Lot 3 — bus d’événements, moteur non rétroactif, store v3 et migrations
+- [x] Lot 4 — catalogue des sept trajets et composants pédagogiques
+- [ ] Lot 5 — implémentation terminée ; contrôle navigateur 1440×900, tablette et 375 px encore à exercer
+- [ ] Lot 6 — éphémérides vivantes (optionnel, volontairement hors de ce chantier)
+
+Écarts décidés après vérification des sources : Artemis II est documentée avec son vol réel d’avril 2026 ; les distances martiennes utilisent la plage NASA 54,6 à 400,2 millions de kilomètres ; Voyager 2 seul est crédité des quatre planètes géantes ; et les résultats Hubble/Gaia 2025 remplacent la fusion certaine avec Andromède par environ 50 % de probabilité de collision sur dix milliards d’années. Pour Orion, les valeurs NASA actuelles (Alnitak ≈ 800 al, Bételgeuse ≈ 550 al, Rigel ≈ 860 al) priment sur les nombres indicatifs de la spécification.
+
 ## Objectif
 Ajouter la Voie lactee, les galaxies voisines, les trous noirs, les nebuleuses et les amas d'etoiles a l'application existante. L'utilisateur pourra naviguer du systeme solaire jusqu'a l'echelle galactique.
 

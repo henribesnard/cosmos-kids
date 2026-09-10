@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Locale, ObjectDisplay } from '../app/uiTypes';
+import { publish } from '../domain/events';
 import { Icon } from './Icon';
 
 interface CompareDialogProps {
@@ -7,22 +8,37 @@ interface CompareDialogProps {
   primary: ObjectDisplay;
   objects: ObjectDisplay[];
   initialSecondaryId?: string;
+  onSecondaryChange: (id: ObjectDisplay['id']) => void;
   onClose: () => void;
-  onTravel: (id: string) => void;
+  onTravel: (id: ObjectDisplay['id']) => void;
 }
 
-export function CompareDialog({ locale, primary, objects, initialSecondaryId = 'jupiter', onClose, onTravel }: CompareDialogProps) {
-  const candidates = objects.filter((object) => object.id !== primary.id && object.id !== 'sun');
+export function CompareDialog({ locale, primary, objects, initialSecondaryId = 'jupiter', onSecondaryChange, onClose, onTravel }: CompareDialogProps) {
+  const candidates = objects.filter((object) => object.id !== primary.id);
   const [secondaryId, setSecondaryId] = useState(candidates.some((item) => item.id === initialSecondaryId) ? initialSecondaryId : candidates[0]?.id ?? primary.id);
   const secondary = objects.find((object) => object.id === secondaryId) ?? primary;
   const fr = locale === 'fr';
+  const completeComparison = useCallback((next?: () => void) => {
+    publish({ type: 'COMPARISON_COMPLETED', a: primary.id, b: secondary.id });
+    (next ?? onClose)();
+  }, [onClose, primary.id, secondary.id]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      completeComparison();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [completeComparison]);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) completeComparison(); }}>
       <section className="compare-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="compare-title">
         <header>
           <div><p className="panel-kicker"><Icon name="compare" size={15} /> {fr ? 'LABORATOIRE' : 'LAB'}</p><h2 id="compare-title">{fr ? 'Comparer deux mondes' : 'Compare two worlds'}</h2></div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label={fr ? 'Fermer' : 'Close'}><Icon name="close" /></button>
+          <button className="icon-button" type="button" onClick={() => completeComparison()} aria-label={fr ? 'Fermer' : 'Close'}><Icon name="close" /></button>
         </header>
         <div className="compare-worlds">
           <WorldPortrait object={primary} locale={locale} />
@@ -31,7 +47,12 @@ export function CompareDialog({ locale, primary, objects, initialSecondaryId = '
             <WorldPortrait object={secondary} locale={locale} />
             <label>
               <span className="sr-only">{fr ? 'Second monde' : 'Second world'}</span>
-              <select value={secondary.id} onChange={(event) => setSecondaryId(event.target.value)}>
+              <select value={secondary.id} onChange={(event) => {
+                const candidate = candidates.find((object) => object.id === event.target.value);
+                if (!candidate) return;
+                setSecondaryId(candidate.id);
+                onSecondaryChange(candidate.id);
+              }}>
                 {candidates.map((object) => <option key={object.id} value={object.id}>{object.name[locale]}</option>)}
               </select>
             </label>
@@ -53,7 +74,7 @@ export function CompareDialog({ locale, primary, objects, initialSecondaryId = '
         </div>
         <footer>
           <p><Icon name="info" size={15} /> {fr ? 'Les valeurs affichées sont arrondies pour faciliter la lecture.' : 'Displayed values are rounded for easier reading.'}</p>
-          <button className="button button--primary" type="button" onClick={() => onTravel(secondary.id)}>{fr ? `Visiter ${secondary.name.fr}` : `Visit ${secondary.name.en}`} <Icon name="arrow" /></button>
+          <button className="button button--primary" type="button" onClick={() => completeComparison(() => onTravel(secondary.id))}>{fr ? `Visiter ${secondary.name.fr}` : `Visit ${secondary.name.en}`} <Icon name="arrow" /></button>
         </footer>
       </section>
     </div>
@@ -68,4 +89,3 @@ function WorldPortrait({ object, locale }: { object: ObjectDisplay; locale: Loca
     </div>
   );
 }
-

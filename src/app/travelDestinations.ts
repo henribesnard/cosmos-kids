@@ -11,10 +11,12 @@ const TRAVEL_VIEW_NAMES = {
   solar: { fr: 'Syst\u00E8me solaire', en: 'Solar System' },
   milkyway: { fr: 'Voie lact\u00E9e', en: 'Milky Way' },
   localgroup: { fr: 'Groupe local de galaxies', en: 'Local Group of galaxies' },
+  iss: { fr: 'Station spatiale internationale', en: 'International Space Station' },
+  'night-sky': { fr: 'Ciel nocturne', en: 'Night sky' },
 } as const;
 
 export function travelDestinationName(destinationId: TravelDestinationId, locale: Locale): string | null {
-  if (destinationId === 'solar' || destinationId === 'milkyway' || destinationId === 'localgroup') {
+  if (destinationId === 'solar' || destinationId === 'milkyway' || destinationId === 'localgroup' || destinationId === 'iss' || destinationId === 'night-sky') {
     return TRAVEL_VIEW_NAMES[destinationId][locale];
   }
   if (isCelestialObjectId(destinationId)) {

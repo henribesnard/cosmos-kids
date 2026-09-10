@@ -6,7 +6,7 @@ interface SearchDialogProps {
   locale: Locale;
   objects: ObjectDisplay[];
   onClose: () => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: ObjectDisplay['id']) => void;
 }
 
 export function SearchDialog({ locale, objects, onClose, onSelect }: SearchDialogProps) {
@@ -55,4 +55,3 @@ export function SearchDialog({ locale, objects, onClose, onSelect }: SearchDialo
     </div>
   );
 }
-

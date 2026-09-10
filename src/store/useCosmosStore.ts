@@ -5,12 +5,18 @@ import {
   type StateStorage,
 } from 'zustand/middleware';
 import type { CelestialObjectId, CosmicObjectId, DeepSkyObjectId, Locale } from '../data';
-import type { ConstellationAbbr } from '../data/constellationTypes';
-import type { MissionId } from '../data/missions';
+import { isCelestialObjectId, isDeepSkyObjectId } from '../data/types';
+import { isConstellationAbbr, type ConstellationAbbr } from '../data/constellationTypes';
+import {
+  ALL_JOURNEY_IDS,
+  type JourneyId,
+  type MissionStepTarget,
+} from '../data/journeyTypes';
+import { publish } from '../domain/events';
 
 export type { CelestialObjectId, CosmicObjectId, DeepSkyObjectId, Locale } from '../data';
 export type { ConstellationAbbr } from '../data/constellationTypes';
-export type { MissionId } from '../data/missions';
+export type { JourneyId } from '../data/journeyTypes';
 
 export type CosmosView = 'landing' | 'earth' | 'constellations' | 'solar' | 'planet' | 'milkyway' | 'localgroup' | 'deepsky';
 export type CosmosOverlay = 'search' | 'compare' | 'credits' | null;
@@ -25,15 +31,28 @@ export type TravelPhase =
 
 export type TravelDestinationId =
   | CosmicObjectId
+  | ConstellationAbbr
+  | 'iss'
+  | 'night-sky'
   | 'solar'
   | 'milkyway'
   | 'localgroup';
 
+export interface MissionRun {
+  readonly startedAt: number | null;
+  readonly completedStepIds: readonly string[];
+  readonly completedAt: number | null;
+}
+
 export interface MissionState {
-  readonly visitedObjectIds: CelestialObjectId[];
-  readonly visitedDeepSkyIds: DeepSkyObjectId[];
-  readonly visitedConstellationIds: ConstellationAbbr[];
-  readonly activeMissionId: MissionId | null;
+  readonly visitedObjectIds: readonly CelestialObjectId[];
+  readonly visitedDeepSkyIds: readonly DeepSkyObjectId[];
+  readonly visitedConstellationIds: readonly ConstellationAbbr[];
+  readonly visitedSpecialIds: readonly ('iss' | 'night-sky')[];
+  /** Unix milliseconds for new discoveries; null means a migrated legacy visit. */
+  readonly firstVisitedAt: Readonly<Partial<Record<MissionStepTarget, number | null>>>;
+  readonly activeJourneyId: JourneyId | null;
+  readonly runs: Readonly<Partial<Record<JourneyId, MissionRun>>>;
 }
 
 export interface TravelState {
@@ -80,7 +99,11 @@ export interface CosmosActions {
   markVisited: (id: CelestialObjectId) => void;
   markVisitedDeepSky: (id: DeepSkyObjectId) => void;
   markVisitedConstellation: (id: ConstellationAbbr) => void;
-  setActiveMission: (id: MissionId | null) => void;
+  recordDiscovery: (id: MissionStepTarget, at: number) => void;
+  setActiveJourney: (id: JourneyId | null) => void;
+  startJourney: (id: JourneyId) => void;
+  completeStep: (journeyId: JourneyId, stepId: string) => void;
+  completeJourney: (journeyId: JourneyId) => void;
   resetMission: () => void;
   startTravel: (
     destinationId: TravelDestinationId,
@@ -129,7 +152,10 @@ function createInitialState(): CosmosState {
       visitedObjectIds: [],
       visitedDeepSkyIds: [],
       visitedConstellationIds: [],
-      activeMissionId: null,
+      visitedSpecialIds: [],
+      firstVisitedAt: {},
+      activeJourneyId: null,
+      runs: {},
     },
     travel: { ...IDLE_TRAVEL },
   };
@@ -137,6 +163,14 @@ function createInitialState(): CosmosState {
 
 export const initialCosmosState: Readonly<CosmosState> = createInitialState();
 export const COSMOS_STORE_STORAGE_KEY = 'cosmos-kids-v1';
+
+const OLD_MISSION_TO_JOURNEY: Readonly<Record<string, JourneyId | null>> = {
+  'solar-neighbourhood': 'earth-to-moon',
+  'grand-tour': 'earth-to-outer-planets',
+  'constellation-quest': 'constellations-from-earth',
+  'nebula-hunt': null,
+  'galaxy-voyage': 'milkyway-to-andromeda',
+};
 
 type PersistedCosmosState = Pick<
   CosmosState,
@@ -162,9 +196,139 @@ const storage = createJSONStorage<PersistedCosmosState>(() =>
 const clampProgress = (value: number): number =>
   Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isJourneyId = (value: unknown): value is JourneyId =>
+  typeof value === 'string' && (ALL_JOURNEY_IDS as readonly string[]).includes(value);
+
+const isSpecialDiscoveryId = (value: string): value is 'iss' | 'night-sky' =>
+  value === 'iss' || value === 'night-sky';
+
+const isMissionStepTarget = (value: string): value is MissionStepTarget =>
+  isCelestialObjectId(value) ||
+  isDeepSkyObjectId(value) ||
+  isConstellationAbbr(value) ||
+  isSpecialDiscoveryId(value);
+
+function safeIdArray<T extends string>(
+  value: unknown,
+  predicate: (candidate: string) => candidate is T,
+): T[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is T => typeof item === 'string' && predicate(item)))];
+}
+
+function safeRuns(value: unknown): Partial<Record<JourneyId, MissionRun>> {
+  if (!isRecord(value)) return {};
+  const result: Partial<Record<JourneyId, MissionRun>> = {};
+  for (const id of ALL_JOURNEY_IDS) {
+    const raw = value[id];
+    if (!isRecord(raw)) continue;
+    const startedAt = typeof raw.startedAt === 'number' && Number.isFinite(raw.startedAt)
+      ? raw.startedAt
+      : null;
+    if (startedAt === null) continue;
+    const completedStepIds = Array.isArray(raw.completedStepIds)
+      ? [...new Set(raw.completedStepIds.filter((step): step is string => typeof step === 'string'))]
+      : [];
+    const completedAt = typeof raw.completedAt === 'number' && Number.isFinite(raw.completedAt)
+      ? raw.completedAt
+      : null;
+    result[id] = { startedAt, completedStepIds, completedAt };
+  }
+  return result;
+}
+
+function safeFirstVisitedAt(value: unknown): Partial<Record<MissionStepTarget, number | null>> {
+  if (!isRecord(value)) return {};
+  const result: Partial<Record<MissionStepTarget, number | null>> = {};
+  for (const [id, rawDate] of Object.entries(value)) {
+    if (!isMissionStepTarget(id)) continue;
+    result[id] = typeof rawDate === 'number' && Number.isFinite(rawDate) ? rawDate : null;
+  }
+  return result;
+}
+
+/** Defensive v1/v2 → v3 migration, exported so corrupted shapes are testable. */
+export function migratePersistedState(persisted: unknown, version: number): PersistedCosmosState {
+  const initial = createInitialState();
+  if (!isRecord(persisted)) {
+    return {
+      view: initial.view,
+      selectedObjectId: initial.selectedObjectId,
+      locale: initial.locale,
+      showOrbits: initial.showOrbits,
+      showLabels: initial.showLabels,
+      snapshotDate: initial.snapshotDate,
+      mission: initial.mission,
+    };
+  }
+
+  const rawMission = isRecord(persisted.mission) ? persisted.mission : {};
+  const visitedObjectIds = safeIdArray(rawMission.visitedObjectIds, isCelestialObjectId);
+  const visitedDeepSkyIds = safeIdArray(rawMission.visitedDeepSkyIds, isDeepSkyObjectId);
+  const visitedConstellationIds = safeIdArray(rawMission.visitedConstellationIds, isConstellationAbbr);
+  const visitedSpecialIds = safeIdArray(rawMission.visitedSpecialIds, isSpecialDiscoveryId);
+  const allLegacyVisits: MissionStepTarget[] = [
+    ...visitedObjectIds,
+    ...visitedDeepSkyIds,
+    ...visitedConstellationIds,
+    ...visitedSpecialIds,
+  ];
+
+  let activeJourneyId: JourneyId | null;
+  let runs: Partial<Record<JourneyId, MissionRun>>;
+  let firstVisitedAt: Partial<Record<MissionStepTarget, number | null>>;
+
+  if (version < 3) {
+    const oldId = typeof rawMission.activeMissionId === 'string' ? rawMission.activeMissionId : '';
+    activeJourneyId = OLD_MISSION_TO_JOURNEY[oldId] ?? null;
+    // Deliberately do not infer journey progress from legacy global visits.
+    runs = {};
+    firstVisitedAt = Object.fromEntries(allLegacyVisits.map((id) => [id, null]));
+  } else {
+    activeJourneyId = isJourneyId(rawMission.activeJourneyId) ? rawMission.activeJourneyId : null;
+    runs = safeRuns(rawMission.runs);
+    firstVisitedAt = safeFirstVisitedAt(rawMission.firstVisitedAt);
+    for (const id of allLegacyVisits) {
+      if (!(id in firstVisitedAt)) firstVisitedAt[id] = null;
+    }
+  }
+
+  const candidateView = persisted.view;
+  const view = typeof candidateView === 'string' && [
+    'landing', 'earth', 'constellations', 'solar', 'planet', 'milkyway', 'localgroup', 'deepsky',
+  ].includes(candidateView)
+    ? candidateView as CosmosView
+    : initial.view;
+  const selectedObjectId = typeof persisted.selectedObjectId === 'string' &&
+    (isCelestialObjectId(persisted.selectedObjectId) || isDeepSkyObjectId(persisted.selectedObjectId))
+    ? persisted.selectedObjectId
+    : null;
+
+  return {
+    view,
+    selectedObjectId,
+    locale: persisted.locale === 'en' ? 'en' : 'fr',
+    showOrbits: typeof persisted.showOrbits === 'boolean' ? persisted.showOrbits : initial.showOrbits,
+    showLabels: typeof persisted.showLabels === 'boolean' ? persisted.showLabels : initial.showLabels,
+    snapshotDate: typeof persisted.snapshotDate === 'string' ? persisted.snapshotDate : null,
+    mission: {
+      visitedObjectIds,
+      visitedDeepSkyIds,
+      visitedConstellationIds,
+      visitedSpecialIds,
+      firstVisitedAt,
+      activeJourneyId,
+      runs,
+    },
+  };
+}
+
 export const useCosmosStore = create<CosmosStore>()(
   persist<CosmosStore, [], [], PersistedCosmosState>(
-    (set) => ({
+    (set, get) => ({
       ...createInitialState(),
 
       setView: (view) => set({ view }),
@@ -187,50 +351,121 @@ export const useCosmosStore = create<CosmosStore>()(
       setSnapshotDate: (snapshotDate) =>
         set(snapshotDate ? { snapshotDate, timeScale: 0 } : { snapshotDate: null, timeScale: 1 }),
 
-      markVisited: (id) =>
-        set((state) =>
-          state.mission.visitedObjectIds.includes(id)
-            ? state
-            : {
-                mission: {
-                  ...state.mission,
-                  visitedObjectIds: [...state.mission.visitedObjectIds, id],
-                },
+      markVisited: (id) => get().recordDiscovery(id, Date.now()),
+      markVisitedDeepSky: (id) => get().recordDiscovery(id, Date.now()),
+      markVisitedConstellation: (id) => get().recordDiscovery(id, Date.now()),
+      recordDiscovery: (id, at) =>
+        set((state) => {
+          const mission = state.mission;
+          const timestamp = Number.isFinite(at) ? at : Date.now();
+          const firstVisitedAt = id in mission.firstVisitedAt
+            ? mission.firstVisitedAt
+            : { ...mission.firstVisitedAt, [id]: timestamp };
+
+          if (isCelestialObjectId(id)) {
+            return {
+              mission: {
+                ...mission,
+                firstVisitedAt,
+                visitedObjectIds: mission.visitedObjectIds.includes(id)
+                  ? mission.visitedObjectIds
+                  : [...mission.visitedObjectIds, id],
               },
-        ),
-      markVisitedDeepSky: (id) =>
-        set((state) =>
-          state.mission.visitedDeepSkyIds.includes(id)
-            ? state
-            : {
-                mission: {
-                  ...state.mission,
-                  visitedDeepSkyIds: [...state.mission.visitedDeepSkyIds, id],
-                },
+            };
+          }
+          if (isDeepSkyObjectId(id)) {
+            return {
+              mission: {
+                ...mission,
+                firstVisitedAt,
+                visitedDeepSkyIds: mission.visitedDeepSkyIds.includes(id)
+                  ? mission.visitedDeepSkyIds
+                  : [...mission.visitedDeepSkyIds, id],
               },
-        ),
-      markVisitedConstellation: (id) =>
-        set((state) =>
-          state.mission.visitedConstellationIds.includes(id)
-            ? state
-            : {
-                mission: {
-                  ...state.mission,
-                  visitedConstellationIds: [...state.mission.visitedConstellationIds, id],
-                },
+            };
+          }
+          if (isConstellationAbbr(id)) {
+            return {
+              mission: {
+                ...mission,
+                firstVisitedAt,
+                visitedConstellationIds: mission.visitedConstellationIds.includes(id)
+                  ? mission.visitedConstellationIds
+                  : [...mission.visitedConstellationIds, id],
               },
-        ),
-      setActiveMission: (id) =>
+            };
+          }
+          return {
+            mission: {
+              ...mission,
+              firstVisitedAt,
+              visitedSpecialIds: mission.visitedSpecialIds.includes(id)
+                ? mission.visitedSpecialIds
+                : [...mission.visitedSpecialIds, id],
+            },
+          };
+        }),
+      setActiveJourney: (id) =>
         set((state) => ({
-          mission: { ...state.mission, activeMissionId: id },
+          mission: { ...state.mission, activeJourneyId: id },
         })),
+      startJourney: (id) => {
+        const isFirstStart = get().mission.runs[id]?.startedAt == null;
+        set((state) => ({
+          mission: {
+            ...state.mission,
+            activeJourneyId: id,
+            runs: {
+              ...state.mission.runs,
+              [id]: state.mission.runs[id]?.startedAt != null
+                ? state.mission.runs[id]!
+                : { startedAt: Date.now(), completedStepIds: [], completedAt: null },
+            },
+          },
+        }));
+        if (isFirstStart) publish({ type: 'JOURNEY_STARTED', id });
+      },
+      completeStep: (journeyId, stepId) =>
+        set((state) => {
+          const run = state.mission.runs[journeyId];
+          if (!run || run.completedStepIds.includes(stepId)) return state;
+          return {
+            mission: {
+              ...state.mission,
+              runs: {
+                ...state.mission.runs,
+                [journeyId]: {
+                  ...run,
+                  completedStepIds: [...run.completedStepIds, stepId],
+                },
+              },
+            },
+          };
+        }),
+      completeJourney: (journeyId) =>
+        set((state) => {
+          const run = state.mission.runs[journeyId];
+          if (!run || run.completedAt != null) return state;
+          return {
+            mission: {
+              ...state.mission,
+              runs: {
+                ...state.mission.runs,
+                [journeyId]: { ...run, completedAt: Date.now() },
+              },
+            },
+          };
+        }),
       resetMission: () =>
         set({
           mission: {
             visitedObjectIds: [],
             visitedDeepSkyIds: [],
             visitedConstellationIds: [],
-            activeMissionId: null,
+            visitedSpecialIds: [],
+            firstVisitedAt: {},
+            activeJourneyId: null,
+            runs: {},
           },
         }),
 
@@ -260,20 +495,25 @@ export const useCosmosStore = create<CosmosStore>()(
         set((state) => ({
           travel: { ...state.travel, progress: clampProgress(progress) },
         })),
-      finishTravel: () =>
+      finishTravel: () => {
+        const destinationId = get().travel.destinationId;
         set((state) => {
           if (!state.travel.destinationId) return { travel: { ...IDLE_TRAVEL } };
           return {
             hoveredObjectId: null,
             travel: { ...state.travel, phase: 'arrived', progress: 1 },
           };
-        }),
+        });
+        if (destinationId && isMissionStepTarget(destinationId)) {
+          publish({ type: 'OBJECT_VISITED', id: destinationId, at: Date.now() });
+        }
+      },
       cancelTravel: () => set({ travel: { ...IDLE_TRAVEL } }),
       reset: () => set(createInitialState()),
     }),
     {
       name: COSMOS_STORE_STORAGE_KEY,
-      version: 2,
+      version: 3,
       storage,
       partialize: (state) => ({
         view: state.view,
@@ -284,19 +524,11 @@ export const useCosmosStore = create<CosmosStore>()(
         snapshotDate: state.snapshotDate,
         mission: state.mission,
       }),
-      migrate: (persisted, version) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const state = persisted as any;
-        if (version < 2) {
-          state.mission = {
-            visitedObjectIds: state.mission?.visitedObjectIds ?? [],
-            visitedDeepSkyIds: [],
-            visitedConstellationIds: [],
-            activeMissionId: null,
-          };
-        }
-        return state as PersistedCosmosState;
-      },
+      migrate: migratePersistedState,
+      merge: (persisted, current) => ({
+        ...current,
+        ...migratePersistedState(persisted, 3),
+      }),
     },
   ),
 );

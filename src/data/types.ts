@@ -26,6 +26,8 @@ export type ScientificUnit =
   | 'km'
   | 'kg'
   | 'm/s²'
+  | 'km/s'
+  | 'min'
   | 'h'
   | 'd'
   | 'deg'
@@ -119,6 +121,21 @@ export interface CelestialBody {
   readonly funFact: LocalizedText;
   readonly science: CelestialScience;
   readonly render: CelestialRenderDescriptor;
+}
+
+/** A human-made orbital destination that is data-backed but not a planet mesh. */
+export interface OrbitalFacility {
+  readonly id: 'iss';
+  readonly kind: 'space-station';
+  readonly name: LocalizedText;
+  readonly shortDescription: LocalizedText;
+  readonly funFact: LocalizedText;
+  readonly altitude: ScientificQuantity<'km'>;
+  readonly orbitalSpeed: ScientificQuantity<'km/s'>;
+  readonly orbitalPeriod: ScientificQuantity<'min'>;
+  readonly sourceUrl: string;
+  readonly attribution: string;
+  readonly retrievedAt: string;
 }
 
 /* ------------------------------------------------------------------ */
