@@ -62,6 +62,13 @@ export interface TravelState {
   readonly progress: number;
 }
 
+export interface Mystery {
+  readonly id: string;
+  readonly question: string;
+  readonly locale: Locale;
+  readonly savedAt: number;
+}
+
 export interface CosmosState {
   readonly view: CosmosView;
   readonly selectedObjectId: CosmicObjectId | null;
@@ -77,6 +84,7 @@ export interface CosmosState {
   readonly snapshotDate: string | null;
   readonly mission: MissionState;
   readonly travel: TravelState;
+  readonly mysteries: readonly Mystery[];
 }
 
 export interface CosmosActions {
@@ -114,6 +122,8 @@ export interface CosmosActions {
   finishTravel: () => void;
   setSnapshotDate: (date: string | null) => void;
   cancelTravel: () => void;
+  addMystery: (question: string, locale: Locale) => void;
+  removeMystery: (id: string) => void;
   reset: () => void;
 }
 
@@ -158,6 +168,7 @@ function createInitialState(): CosmosState {
       runs: {},
     },
     travel: { ...IDLE_TRAVEL },
+    mysteries: [],
   };
 }
 
@@ -181,6 +192,7 @@ type PersistedCosmosState = Pick<
   | 'showLabels'
   | 'snapshotDate'
   | 'mission'
+  | 'mysteries'
 >;
 
 const fallbackStorage: StateStorage = {
@@ -250,7 +262,18 @@ function safeFirstVisitedAt(value: unknown): Partial<Record<MissionStepTarget, n
   return result;
 }
 
-/** Defensive v1/v2 → v3 migration, exported so corrupted shapes are testable. */
+function safeMysteries(value: unknown): Mystery[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Mystery =>
+    isRecord(item) &&
+    typeof item.id === 'string' &&
+    typeof item.question === 'string' &&
+    (item.locale === 'fr' || item.locale === 'en') &&
+    typeof item.savedAt === 'number' && Number.isFinite(item.savedAt),
+  );
+}
+
+/** Defensive v1/v2/v3 → v4 migration, exported so corrupted shapes are testable. */
 export function migratePersistedState(persisted: unknown, version: number): PersistedCosmosState {
   const initial = createInitialState();
   if (!isRecord(persisted)) {
@@ -262,6 +285,7 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
       showLabels: initial.showLabels,
       snapshotDate: initial.snapshotDate,
       mission: initial.mission,
+      mysteries: [],
     };
   }
 
@@ -307,6 +331,9 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
     ? persisted.selectedObjectId
     : null;
 
+  // v3→v4: add mysteries (empty array for pre-v4 stores)
+  const mysteries = version >= 4 ? safeMysteries(persisted.mysteries) : [];
+
   return {
     view,
     selectedObjectId,
@@ -323,6 +350,7 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
       activeJourneyId,
       runs,
     },
+    mysteries,
   };
 }
 
@@ -509,11 +537,22 @@ export const useCosmosStore = create<CosmosStore>()(
         }
       },
       cancelTravel: () => set({ travel: { ...IDLE_TRAVEL } }),
+      addMystery: (question, locale) =>
+        set((state) => {
+          const id = `mystery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          return {
+            mysteries: [...state.mysteries, { id, question, locale, savedAt: Date.now() }],
+          };
+        }),
+      removeMystery: (id) =>
+        set((state) => ({
+          mysteries: state.mysteries.filter((m) => m.id !== id),
+        })),
       reset: () => set(createInitialState()),
     }),
     {
       name: COSMOS_STORE_STORAGE_KEY,
-      version: 3,
+      version: 4,
       storage,
       partialize: (state) => ({
         view: state.view,
@@ -523,11 +562,12 @@ export const useCosmosStore = create<CosmosStore>()(
         showLabels: state.showLabels,
         snapshotDate: state.snapshotDate,
         mission: state.mission,
+        mysteries: state.mysteries,
       }),
       migrate: migratePersistedState,
       merge: (persisted, current) => ({
         ...current,
-        ...migratePersistedState(persisted, 3),
+        ...migratePersistedState(persisted, 4),
       }),
     },
   ),

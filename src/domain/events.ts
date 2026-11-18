@@ -17,7 +17,8 @@ export type CosmosEvent =
   | { readonly type: 'QUIZ_ANSWERED'; readonly stepId: string; readonly correct: boolean }
   | { readonly type: 'REAL_WORLD_CHECKED'; readonly stepId: string }
   | { readonly type: 'JOURNEY_STARTED'; readonly id: JourneyId }
-  | { readonly type: 'JOURNEY_COMPLETED'; readonly id: JourneyId };
+  | { readonly type: 'JOURNEY_COMPLETED'; readonly id: JourneyId }
+  | { readonly type: 'ASSISTANT_QUESTION_ASKED'; readonly topicId: MissionStepTarget | null };
 
 export type CosmosEventHandler = (event: CosmosEvent) => void;
 

@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { novaPlugin } from './server/nova/vitePlugin';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), novaPlugin()],
   server: {
     host: '127.0.0.1',
     port: 4173,

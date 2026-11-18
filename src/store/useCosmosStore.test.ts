@@ -162,7 +162,7 @@ describe('useCosmosStore', () => {
       version: number;
     };
 
-    expect(persisted.version).toBe(3);
+    expect(persisted.version).toBe(4);
     expect(persisted.state).toMatchObject({
       view: 'solar',
       selectedObjectId: 'jupiter',
@@ -305,7 +305,103 @@ describe('useCosmosStore', () => {
     });
   });
 
-  it('reset restaure entièrement l’état initial', () => {
+  it('addMystery ajoute un mystère et removeMystery le supprime', () => {
+    const actions = useCosmosStore.getState();
+
+    actions.addMystery('Qu\'y a-t-il dans un trou noir ?', 'fr');
+    expect(useCosmosStore.getState().mysteries).toHaveLength(1);
+    expect(useCosmosStore.getState().mysteries[0]).toMatchObject({
+      question: 'Qu\'y a-t-il dans un trou noir ?',
+      locale: 'fr',
+    });
+
+    actions.addMystery('What is dark matter?', 'en');
+    expect(useCosmosStore.getState().mysteries).toHaveLength(2);
+
+    const id = useCosmosStore.getState().mysteries[0]!.id;
+    actions.removeMystery(id);
+    expect(useCosmosStore.getState().mysteries).toHaveLength(1);
+    expect(useCosmosStore.getState().mysteries[0]!.locale).toBe('en');
+  });
+
+  it('migre v3 → v4 en ajoutant mysteries vide', () => {
+    const migrated = migratePersistedState({
+      view: 'solar',
+      selectedObjectId: 'saturn',
+      locale: 'fr',
+      showOrbits: true,
+      showLabels: true,
+      snapshotDate: null,
+      mission: {
+        visitedObjectIds: ['saturn'],
+        visitedDeepSkyIds: [],
+        visitedConstellationIds: [],
+        visitedSpecialIds: [],
+        firstVisitedAt: { saturn: 1000 },
+        activeJourneyId: null,
+        runs: {},
+      },
+    }, 3);
+
+    expect(migrated.mysteries).toEqual([]);
+    expect(migrated.mission.visitedObjectIds).toEqual(['saturn']);
+  });
+
+  it('migre v4 avec mysteries existants et les préserve', () => {
+    const migrated = migratePersistedState({
+      view: 'solar',
+      selectedObjectId: null,
+      locale: 'en',
+      showOrbits: true,
+      showLabels: true,
+      snapshotDate: null,
+      mission: {
+        visitedObjectIds: [],
+        visitedDeepSkyIds: [],
+        visitedConstellationIds: [],
+        visitedSpecialIds: [],
+        firstVisitedAt: {},
+        activeJourneyId: null,
+        runs: {},
+      },
+      mysteries: [
+        { id: 'test-1', question: 'What is dark energy?', locale: 'en', savedAt: 1000 },
+      ],
+    }, 4);
+
+    expect(migrated.mysteries).toHaveLength(1);
+    expect(migrated.mysteries[0]).toMatchObject({
+      id: 'test-1',
+      question: 'What is dark energy?',
+      locale: 'en',
+    });
+  });
+
+  it('résiste aux mysteries corrompus', () => {
+    const migrated = migratePersistedState({
+      view: 'landing',
+      selectedObjectId: 'earth',
+      locale: 'fr',
+      showOrbits: true,
+      showLabels: true,
+      snapshotDate: null,
+      mission: {
+        visitedObjectIds: [],
+        visitedDeepSkyIds: [],
+        visitedConstellationIds: [],
+        visitedSpecialIds: [],
+        firstVisitedAt: {},
+        activeJourneyId: null,
+        runs: {},
+      },
+      mysteries: ['invalid', 42, null, { id: 'ok', question: 'test', locale: 'fr', savedAt: 100 }],
+    }, 4);
+
+    expect(migrated.mysteries).toHaveLength(1);
+    expect(migrated.mysteries[0]!.id).toBe('ok');
+  });
+
+  it('reset restaure entièrement l\u2019état initial', () => {
     const actions = useCosmosStore.getState();
     actions.setView('solar');
     actions.selectObject('mars');
