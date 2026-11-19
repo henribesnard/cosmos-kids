@@ -39,7 +39,11 @@ function createMockProvider(): LLMProvider {
       }
       if (options.maxTokens === 2048) {
         // Verification step — attribute the claim to the first registered source ID found in the prompt
-        const ids = [...userText.matchAll(/\[(?:cat|web)-[^\]\s]+\]/g)].map((m) => m[0].slice(1, -1));
+        const ids: string[] = [];
+        for (const part of userText.split('[cat-').slice(1)) {
+          const id = 'cat-' + part.split(']')[0].trim();
+          if (id.length > 4) ids.push(id);
+        }
         return json({ results: [{ claimIndex: 0, verdict: 'supported', supportingSourceIds: ids.slice(0, 1) }] });
       }
       if (options.maxTokens === 4096) {

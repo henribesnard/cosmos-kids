@@ -131,6 +131,14 @@ async function loadCatalog(): Promise<readonly CatalogEntry[]> {
   return entries;
 }
 
+/**
+ * All catalog entries (server-side). Used to derive travel destinations
+ * and their localized display names without duplicating the data.
+ */
+export async function getCatalogEntries(): Promise<readonly CatalogEntry[]> {
+  return loadCatalog();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Search function                                                    */
 /* ------------------------------------------------------------------ */
