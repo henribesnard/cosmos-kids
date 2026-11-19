@@ -18,6 +18,7 @@ import { validateRequest, containsPersonalInfo, isValidTravelDestination, type N
 import { searchCatalog, type CatalogEntry } from './catalogSearch';
 import { getSystemPrompt, getClassificationPrompt, getVerificationPrompt, getTextAssemblyPrompt } from './prompts';
 import { checkRateLimit, type RateLimitResult } from './rateLimit';
+import { computeTravelActions } from './travelActions';
 import { createSearchProvider, type SearchProvider } from './webSearch';
 
 /* ------------------------------------------------------------------ */
@@ -587,6 +588,8 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
 
         // --- Step 4: If no sources at all, return 'unknown' immediately ---
         if (registry.isEmpty()) {
+          // 'unknown' answer: an action only if the object is clearly the question's subject
+          const unknownActions = await computeTravelActions(req.question, [], req.context.locale, { onlyIfInQuestion: true });
           const unknownResult: NovaResult = {
             text: req.context.locale === 'fr'
               ? 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans mes sources. Les scientifiques ne le savent peut-être pas encore !'
@@ -597,7 +600,7 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             followUps: req.context.locale === 'fr'
               ? ['Combien de lunes a Saturne ?', 'Quelle est la taille du Soleil ?']
               : ['How many moons does Saturn have?', 'How big is the Sun?'],
-            actions: [],
+            actions: unknownActions,
             guessFirst: false,
             kind: 'answer',
           };
@@ -679,14 +682,27 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           finalText = assembled;
         }
 
-        // --- Step 9: Filter actions (whitelist destinations) ---
-        const validActions = draft.actions
+        // --- Step 9: Travel actions ---
+        // Deterministic: computed by the server from the question and the
+        // catalog sources cited by the retained claims (the model draft is
+        // unreliable here). 'unknown' answers only get an action when the
+        // object is clearly the subject of the question.
+        const serverActions = await computeTravelActions(
+          req.question,
+          verifiedClaims,
+          req.context.locale,
+          { onlyIfInQuestion: worstStatus === 'unknown' },
+        );
+        // Model-proposed actions are still accepted when valid, merged without duplicates
+        const modelActions = draft.actions
           .filter((a): a is AssistantAction =>
             a.kind === 'travel' &&
             typeof a.destinationId === 'string' &&
             isValidTravelDestination(a.destinationId) &&
-            typeof a.label === 'string',
+            typeof a.label === 'string' &&
+            !serverActions.some((s) => s.destinationId === a.destinationId),
           );
+        const validActions = [...serverActions, ...modelActions].slice(0, 2);
 
         // Build final result — only sources referenced by verified claims
         const usedSourceIds = new Set(verifiedClaims.flatMap((c) => c.sourceIds));
