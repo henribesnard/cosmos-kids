@@ -1,6 +1,9 @@
 /**
  * Self-contained test runner: starts the Nova server, runs 15 questions × 2 runs, prints results.
- * Usage: npx tsx scripts/run-nova-test.mjs
+ * Usage: npx tsx scripts/run-nova-test.mjs [--via-vite]
+ *   --via-vite : test the API through the Vite dev server on port 4173
+ *                (route mounted by server/nova/vitePlugin.ts) instead of the
+ *                standalone server on a random port near 3001.
  */
 
 import { readFileSync } from 'node:fs';
@@ -24,25 +27,26 @@ try {
   // .env not found
 }
 
-const PORT = 3100 + Math.floor(Math.random() * 900); // Random port to avoid conflicts
+const VIA_VITE = process.argv.includes('--via-vite');
+const PORT = VIA_VITE ? 4173 : 3100 + Math.floor(Math.random() * 900); // Random port to avoid conflicts
 process.env.NOVA_PORT = String(PORT);
 process.env.NOVA_MAX_QUESTIONS_PER_HOUR = '100'; // High limit for 2-run testing
 
 console.log(`MISTRAL_API_KEY set: ${!!process.env.MISTRAL_API_KEY}`);
 console.log(`EXA_API_KEY set: ${!!process.env.EXA_API_KEY}`);
+console.log(`Mode: ${VIA_VITE ? 'Vite dev server (API mounted by the nova plugin)' : 'standalone server (server/index.ts)'}`);
 console.log(`Starting Nova server on port ${PORT}...`);
 
 // Start the server as a child process using npx tsx
 const serverScript = resolve(process.cwd(), 'server/index.ts');
-const serverProcess = spawn(
-  'npx',
-  ['tsx', `"${serverScript}"`],
-  {
-    env: { ...process.env, NOVA_PORT: String(PORT) },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    shell: true,
-  },
-);
+const spawnArgs = VIA_VITE
+  ? ['vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort']
+  : ['tsx', `"${serverScript}"`];
+const serverProcess = spawn('npx', spawnArgs, {
+  env: { ...process.env, NOVA_PORT: String(PORT) },
+  stdio: ['pipe', 'pipe', 'pipe'],
+  shell: true,
+});
 
 // Forward server output
 serverProcess.stdout?.on('data', (data) => process.stderr.write(`[server] ${data}`));
@@ -54,12 +58,13 @@ serverProcess.on('exit', (code) => {
 });
 
 // Wait for server to be ready
-async function waitForServer(maxWait = 15000) {
+async function waitForServer(maxWait = 30000) {
+  const healthUrl = VIA_VITE ? `http://127.0.0.1:${PORT}/` : `http://127.0.0.1:${PORT}/health`;
   const start = Date.now();
   while (Date.now() - start < maxWait) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/health`);
-      if (res.ok) return true;
+      const res = await fetch(healthUrl);
+      if (res.ok || VIA_VITE) return true; // Vite dev answers on / once listening
     } catch {
       // not ready yet
     }
