@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   SOLAR_SYSTEM_BODIES,
@@ -44,6 +44,7 @@ import { ScaleNavigator } from '../components/ScaleNavigator';
 import { SceneControls } from '../components/SceneControls';
 import { SearchDialog } from '../components/SearchDialog';
 import { TravelOverlay } from '../components/TravelOverlay';
+import { NovaDock } from '../components/assistant/NovaDock';
 import { publish } from '../domain/events';
 import { startMissionEngine } from '../domain/missionEngine';
 import type { ObjectDisplay } from './uiTypes';
@@ -79,6 +80,15 @@ const DiscoveryLog = lazy(async () => {
   const module = await import('../components/DiscoveryLog');
   return { default: module.DiscoveryLog };
 });
+
+const ParentsPage = lazy(() => import('../components/assistant/ParentsPage'));
+
+/** Destinations Nova may propose with « Emmène-moi voir » (server also whitelists them). */
+const NOVA_SPECIAL_DESTINATIONS: ReadonlySet<string> = new Set(['iss', 'night-sky', 'solar', 'milkyway', 'localgroup', 'constellations']);
+
+function isNovaDestination(id: string): id is NavigationDestination {
+  return NOVA_SPECIAL_DESTINATIONS.has(id) || isCosmicObjectId(id) || isConstellationAbbr(id);
+}
 
 const taglines: Record<CelestialObjectId, { fr: string; en: string }> = {
   sun: { fr: 'L\u2019étoile au cœur de notre système', en: 'The star at the heart of our system' },
@@ -293,6 +303,7 @@ type SceneRoute = {
 type RouteResult = SceneRoute
   | { kind: 'journeys'; journeyId: JourneyId | null }
   | { kind: 'log' }
+  | { kind: 'parents' }
   | { kind: 'compare'; primaryId: MissionStepTarget; secondaryId: MissionStepTarget };
 
 function isJourneyId(value: string): value is JourneyId {
@@ -307,6 +318,7 @@ function routeState(pathname: string): RouteResult | null {
   if (pathname === '/') return { kind: 'scene', view: 'landing', selected: 'earth', constellation: null, overlayCredits: false, discovery: null, scale: 'earth' };
   if (pathname === '/trajets') return { kind: 'journeys', journeyId: null };
   if (pathname === '/carnet') return { kind: 'log' };
+  if (pathname === '/parents') return { kind: 'parents' };
   const compareMatch = pathname.match(/^\/compare\/([^/]+)\/([^/]+)\/?$/);
   if (
     compareMatch?.[1]
@@ -405,6 +417,8 @@ export function App() {
   const journeyRouteId = currentRoute?.kind === 'journeys' ? currentRoute.journeyId : null;
   const journeyOpen = currentRoute?.kind === 'journeys';
   const logOpen = currentRoute?.kind === 'log';
+  const parentsOpen = currentRoute?.kind === 'parents';
+  const [novaOpen, setNovaOpen] = useState(false);
   const compareRoute = currentRoute?.kind === 'compare' ? currentRoute : null;
 
   const phaseOverrides = useMemo(() => {
@@ -458,12 +472,12 @@ export function App() {
         if (state.overlay === 'credits') navigate(returnPathRef.current);
         else if (state.overlay === 'compare') return;
         else if (state.overlay) state.closeOverlay();
-        else if (journeyOpen || logOpen) navigate(returnPathRef.current);
+        else if (journeyOpen || logOpen || parentsOpen) navigate(returnPathRef.current);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [journeyOpen, logOpen, navigate]);
+  }, [journeyOpen, logOpen, parentsOpen, navigate]);
 
   useEffect(() => () => {
     if (travelFrameRef.current !== null) cancelAnimationFrame(travelFrameRef.current);
@@ -584,21 +598,32 @@ export function App() {
   }, [navigate]);
 
   const openJourneys = useCallback(() => {
-    if (!journeyOpen && !logOpen) returnPathRef.current = location.pathname;
+    if (!journeyOpen && !logOpen && !parentsOpen) returnPathRef.current = location.pathname;
     navigate('/trajets');
-  }, [journeyOpen, location.pathname, logOpen, navigate]);
+  }, [journeyOpen, location.pathname, logOpen, parentsOpen, navigate]);
 
   const openLog = useCallback(() => {
-    if (!journeyOpen && !logOpen) returnPathRef.current = location.pathname;
+    if (!journeyOpen && !logOpen && !parentsOpen) returnPathRef.current = location.pathname;
     navigate('/carnet');
-  }, [journeyOpen, location.pathname, logOpen, navigate]);
+  }, [journeyOpen, location.pathname, logOpen, parentsOpen, navigate]);
+
+  const openParents = useCallback(() => {
+    if (!journeyOpen && !logOpen && !parentsOpen) returnPathRef.current = location.pathname;
+    navigate('/parents');
+  }, [journeyOpen, location.pathname, logOpen, parentsOpen, navigate]);
 
   const closeRoutePanel = useCallback(() => {
-    const fallback = returnPathRef.current.startsWith('/trajets') || returnPathRef.current === '/carnet'
+    const fallback = returnPathRef.current.startsWith('/trajets') || returnPathRef.current === '/carnet' || returnPathRef.current === '/parents'
       ? '/explore/solar-system'
       : returnPathRef.current;
     navigate(fallback);
   }, [navigate]);
+
+  const travelFromNova = useCallback((destinationId: string) => {
+    if (!isNovaDestination(destinationId)) return;
+    if (journeyOpen || logOpen || parentsOpen) returnPathRef.current = location.pathname;
+    beginTravel(destinationId);
+  }, [beginTravel, journeyOpen, location.pathname, logOpen, parentsOpen]);
 
   const openComparison = useCallback((a: MissionStepTarget, b: MissionStepTarget) => {
     if (!DISPLAY_BY_ID[a] || !DISPLAY_BY_ID[b]) return;
@@ -733,7 +758,7 @@ export function App() {
     : (locale === 'fr' ? 'Tailles et distances visuelles simplifiées' : 'Visual sizes and distances simplified');
 
   return (
-    <div className={`app-shell ${isLanding ? 'app-shell--landing' : ''}`}>
+    <div className={`app-shell ${isLanding ? 'app-shell--landing' : ''}${novaOpen ? ' app-shell--nova-open' : ''}`}>
       <a className="skip-link" href="#cosmos-content">{locale === 'fr' ? 'Aller au contenu' : 'Skip to content'}</a>
       <div className="scene-layer" aria-hidden="true">
         <Suspense fallback={<div className="scene-loading"><span className="scene-loading__orbit" /></div>}>
@@ -833,14 +858,19 @@ export function App() {
                 />
               </Suspense>
             )}
-            {currentObject && !journeyOpen && !logOpen && <InfoPanel key={currentObject.id} locale={locale} object={currentObject} onCompare={() => openComparison(currentObject.id, currentObject.id === 'jupiter' ? 'earth' : 'jupiter')} onClose={() => {
+            {parentsOpen && (
+              <Suspense fallback={null}>
+                <ParentsPage locale={locale} onClose={closeRoutePanel} />
+              </Suspense>
+            )}
+            {currentObject && !journeyOpen && !logOpen && !parentsOpen && <InfoPanel key={currentObject.id} locale={locale} object={currentObject} onCompare={() => openComparison(currentObject.id, currentObject.id === 'jupiter' ? 'earth' : 'jupiter')} onClose={() => {
               if (location.pathname === '/explore/earth/iss') navigateDirectly('earth');
               else if (view === 'constellations') navigateDirectly('constellations');
               else if (view === 'planet') navigateDirectly('solar');
               else if (view === 'deepsky') navigateDirectly('milkyway');
               else useCosmosStore.getState().selectObject(null);
             }} />}
-            {!logOpen && <ScaleNavigator locale={locale} activeId={activeScaleId} onTravel={beginTravel} />}
+            {!logOpen && !parentsOpen && <ScaleNavigator locale={locale} activeId={activeScaleId} onTravel={beginTravel} />}
             {showConstellationControls && (
               <SceneControls
                 locale={locale}
@@ -899,7 +929,17 @@ export function App() {
       {travel.phase !== 'idle' && travel.destinationId && currentTravelDestinationName && (
         <TravelOverlay destinationId={travel.destinationId} locale={locale} destinationName={currentTravelDestinationName} progress={travel.progress} phase={travel.phase} reducedMotion={reducedMotion} onSkip={() => { if (travel.destinationId) { useCosmosStore.getState().finishTravel(); navigateDirectly(travelTargetRef.current); useCosmosStore.getState().cancelTravel(); } }} />
       )}
-      <Footer />
+      <NovaDock
+        locale={locale}
+        open={novaOpen}
+        onOpenChange={setNovaOpen}
+        reducedMotion={reducedMotion}
+        canGreet={!isLanding && !parentsOpen && travel.phase === 'idle'}
+        canTravel={isNovaDestination}
+        onTravel={travelFromNova}
+        onOpenParents={openParents}
+      />
+      <Footer locale={locale} onParents={openParents} />
     </div>
   );
 }
