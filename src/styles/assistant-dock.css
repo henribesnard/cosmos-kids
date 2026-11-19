@@ -1,0 +1,172 @@
+/*
+ * Nova — always-loaded styles (dock button, first-meeting bubble, avatar
+ * animations, layout coexistence). The conversation panel styles live in
+ * assistant.css and are loaded with the lazy panel chunk.
+ */
+:root {
+  --nova-panel-w: 404px;
+  --nova-gap: 16px;
+  --nova-glow: 0 0 26px rgba(99, 230, 255, .45);
+  --nova-bubble: rgba(10, 18, 38, .78);
+  --nova-ink: #eef4ff;
+}
+
+/* ---------- Dock button ---------- */
+.nova-dock {
+  align-items: center;
+  backdrop-filter: blur(16px);
+  background: linear-gradient(145deg, rgba(13, 25, 53, .86), rgba(5, 11, 27, .8));
+  border: 1px solid rgba(99, 230, 255, .38);
+  border-radius: 999px;
+  bottom: 70px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .4), var(--nova-glow);
+  color: var(--nova-ink);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 62px;
+  padding: 4px 16px 4px 6px;
+  position: absolute;
+  right: 26px;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  z-index: 16;
+}
+.nova-dock[hidden] { display: none; }
+.nova-dock:hover { border-color: var(--cyan); box-shadow: 0 16px 42px rgba(0, 0, 0, .45), 0 0 34px rgba(99, 230, 255, .6); transform: translateY(-2px); }
+.nova-dock:focus-visible { outline: 3px solid var(--cyan); outline-offset: 4px; }
+.nova-dock__name { font: 600 16px 'Space Grotesk', sans-serif; letter-spacing: .04em; }
+.nova-dock__kbd { background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .14); border-radius: 6px; color: #b7c3dc; font: 600 11px 'Space Grotesk', sans-serif; padding: 2px 6px; }
+.nova-dock--greeting { animation: nova-dock-call 2.4s ease-in-out infinite; }
+.nova-dock__loading {
+  backdrop-filter: blur(16px);
+  background: var(--nova-bubble);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  bottom: 70px;
+  color: var(--cyan-pale);
+  font-size: 15px;
+  margin: 0;
+  padding: 12px 18px;
+  position: absolute;
+  right: 26px;
+  z-index: 16;
+}
+
+/* ---------- First meeting bubble (non-blocking) ---------- */
+.nova-greeting {
+  animation: nova-rise .4s ease both;
+  backdrop-filter: blur(16px);
+  background: var(--nova-bubble);
+  border: 1px solid rgba(99, 230, 255, .3);
+  border-radius: 18px 18px 6px 18px;
+  bottom: 146px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .4);
+  color: var(--nova-ink);
+  max-width: 320px;
+  padding: 15px 17px;
+  position: absolute;
+  right: 26px;
+  z-index: 16;
+}
+.nova-greeting__kicker { color: var(--cyan); font: 700 13px 'Space Grotesk', sans-serif; letter-spacing: .1em; margin: 0 0 6px; text-transform: uppercase; }
+.nova-greeting__text { font-size: 17px; line-height: 1.45; margin: 0; }
+.nova-greeting__rule { color: var(--cyan-pale); font-size: 15px; line-height: 1.45; margin: 8px 0 0; }
+.nova-greeting__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.nova-greeting__cta, .nova-greeting__later { border-radius: 999px; cursor: pointer; font-size: 15px; font-weight: 600; min-height: 44px; padding: 0 16px; }
+.nova-greeting__cta { background: rgba(99, 230, 255, .18); border: 1px solid rgba(99, 230, 255, .5); color: var(--nova-ink); }
+.nova-greeting__cta:hover { background: rgba(99, 230, 255, .28); }
+.nova-greeting__later { background: transparent; border: 1px solid rgba(140, 180, 255, .22); color: #b7c3dc; }
+
+/* ---------- Footer link to the parents page ---------- */
+.site-footer__link { background: none; border: 0; color: #8d9ab5; cursor: pointer; font: inherit; letter-spacing: inherit; margin-left: 6px; min-height: 24px; padding: 2px 4px; pointer-events: auto; text-decoration: underline; text-decoration-color: rgba(99, 230, 255, .3); text-underline-offset: 3px; }
+.site-footer__link:hover { color: var(--cyan); }
+
+/* ---------- Coexistence with the InfoPanel (desktop) ----------
+ * Nova docks against the right edge, next to its button; the object card
+ * slides left so both stay readable side by side. */
+.info-panel { transition: right .28s ease; }
+@media (min-width: 1024px) {
+  .app-shell--nova-open .info-panel { right: calc(26px + var(--nova-panel-w) + var(--nova-gap)); }
+}
+@media (min-width: 1024px) and (max-width: 1279px) {
+  :root { --nova-panel-w: 352px; --nova-gap: 12px; }
+  .app-shell--nova-open .info-panel { width: 300px; }
+}
+
+/* ---------- Tablet & mobile ---------- */
+@media (min-width: 1024px) {
+  /* Beside the dock button, pointing at it, clear of the object card. */
+  .nova-greeting { bottom: 118px; right: 196px; }
+}
+@media (max-width: 1023px) {
+  .nova-dock { padding: 4px; }
+  .nova-dock__name, .nova-dock__kbd { display: none; }
+}
+@media (max-width: 820px) {
+  .nova-dock, .nova-dock__loading { bottom: 146px; right: 12px; }
+  .nova-greeting { bottom: 222px; left: 12px; margin-left: auto; right: 12px; }
+  .app-shell:has(.info-panel) .nova-dock { bottom: calc(48vh + 12px); }
+  .app-shell:has(.info-panel) .nova-greeting { bottom: calc(48vh + 88px); }
+}
+@media (max-width: 820px) {
+  /* Route panels become bottom sheets here: N still opens Nova. */
+  .app-shell:has(.discovery-log, .nova-parents, .mission-panel.is-open) .nova-dock { display: none; }
+}
+@media (max-width: 580px) {
+  .app-shell:has(.info-panel) .nova-dock { bottom: calc(53vh + 12px); }
+  .app-shell:has(.info-panel) .nova-greeting { bottom: calc(53vh + 88px); }
+}
+
+/* ---------- Avatar ---------- */
+.nova-av { display: block; flex: none; overflow: visible; }
+.nova-av__float, .nova-av__pupil, .nova-av__dots circle, .nova-av__sparkles path, .nova-av__question,
+.nova-av__lens, .nova-av__far-planet, .nova-av__waves path, .nova-av__charge { transform-box: fill-box; transform-origin: center; }
+.nova-av__beam { display: none; }
+.nova-av__float { animation: nova-float 4.2s ease-in-out infinite; }
+.nova-av__halo { animation: nova-breathe 4.2s ease-in-out infinite; }
+.nova-av--idle .nova-av__pupil, .nova-av--listening .nova-av__pupil { animation: nova-blink 5.5s infinite; }
+.nova-av--listening .nova-av__waves path { animation: nova-wave 1.3s ease-in-out infinite; }
+.nova-av--listening .nova-av__waves path + path { animation-delay: .25s; }
+.nova-av--thinking .nova-av__dots circle { animation: nova-dot 1.4s ease-in-out infinite; }
+.nova-av--thinking .nova-av__dots circle:nth-child(2) { animation-delay: .2s; }
+.nova-av--thinking .nova-av__dots circle:nth-child(3) { animation-delay: .4s; }
+.nova-av--searching .nova-av__beam { animation: nova-beam 1.6s ease-in-out infinite; display: inline; }
+.nova-av--searching .nova-av__antenna { animation: nova-scan 1.6s ease-in-out infinite; transform-box: view-box; transform-origin: 40px 23px; }
+.nova-av--searching .nova-av__pupil { animation: nova-look 1.6s ease-in-out infinite; }
+.nova-av--verifying .nova-av__lens { animation: nova-lens 1.8s ease-in-out infinite; }
+.nova-av--happy .nova-av__float { animation-duration: 2.6s; }
+.nova-av--happy .nova-av__sparkles path { animation: nova-twinkle 1.6s ease-in-out infinite; }
+.nova-av--happy .nova-av__sparkles path + path { animation-delay: .5s; }
+.nova-av--mystery .nova-av__question { animation: nova-bob 2.2s ease-in-out infinite; }
+.nova-av--recharging .nova-av__charge { animation: nova-charge 2.4s ease-in-out infinite; transform-origin: left center; }
+.nova-av--recharging .nova-av__panel { filter: drop-shadow(0 0 3px #67e7bd); }
+.nova-av--recharging .nova-av__float { animation-duration: 6s; }
+.nova-av--caring .nova-av__float { animation-duration: 6s; }
+.nova-av--elsewhere .nova-av__far-planet { animation: nova-bob 3s ease-in-out infinite; }
+.nova-av--offline { filter: saturate(.35); }
+.nova-av--offline .nova-av__float, .nova-av--offline .nova-av__halo { animation: none; }
+.nova-av--offline .nova-av__halo { opacity: .2; }
+
+@keyframes nova-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes nova-breathe { 0%, 100% { opacity: .55; } 50% { opacity: .95; } }
+@keyframes nova-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes nova-wave { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@keyframes nova-dot { 0%, 100% { opacity: .2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+@keyframes nova-beam { 0%, 100% { opacity: .1; } 50% { opacity: .35; } }
+@keyframes nova-scan { 0%, 100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
+@keyframes nova-look { 0%, 100% { transform: translateX(-4px); } 50% { transform: translateX(4px); } }
+@keyframes nova-lens { 0%, 100% { transform: translate(-3px, -1px); } 50% { transform: translate(3px, 1px); } }
+@keyframes nova-twinkle { 0%, 100% { opacity: .3; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.1); } }
+@keyframes nova-bob { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-4px) rotate(6deg); } }
+@keyframes nova-charge { 0% { transform: scaleX(.1); } 80%, 100% { transform: scaleX(1); } }
+@keyframes nova-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes nova-dock-call { 0%, 100% { box-shadow: 0 14px 38px rgba(0,0,0,.4), 0 0 18px rgba(99,230,255,.35); } 50% { box-shadow: 0 14px 38px rgba(0,0,0,.4), 0 0 40px rgba(99,230,255,.75); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nova-av, .nova-av *, .nova-dock, .nova-greeting, .info-panel { animation: none !important; transition: none !important; }
+  .nova-av--searching .nova-av__beam { opacity: .25; }
+}
+
+@media (forced-colors: active) {
+  .nova-dock, .nova-greeting { background: Canvas; border: 1px solid CanvasText; }
+}

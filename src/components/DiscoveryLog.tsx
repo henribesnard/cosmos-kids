@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Locale } from '../app/uiTypes';
 import { CONSTELLATION_BY_ID } from '../data/constellations';
 import { isConstellationAbbr } from '../data/constellationTypes';
@@ -9,6 +10,8 @@ import '../styles/journeys.css';
 import { INTERNATIONAL_SPACE_STATION, SOLAR_SYSTEM_BODY_BY_ID } from '../data/solarSystem';
 import { isCelestialObjectId, isDeepSkyObjectId } from '../data/types';
 import type { MissionState } from '../store/useCosmosStore';
+import { MysteriesSection } from './assistant/MysteriesSection';
+import { useCosmosStore } from '../store/useCosmosStore';
 import { Icon } from './Icon';
 
 interface DiscoveryLogProps {
@@ -93,6 +96,8 @@ export function DiscoveryLog({
   onSelectJourney,
 }: DiscoveryLogProps) {
   const fr = locale === 'fr';
+  const [tab, setTab] = useState<'discoveries' | 'mysteries'>('discoveries');
+  const mysteryCount = useCosmosStore((state) => state.mysteries.length);
   const ids: MissionStepTarget[] = [
     ...missionState.visitedObjectIds,
     ...missionState.visitedDeepSkyIds,
@@ -124,31 +129,60 @@ export function DiscoveryLog({
           <Icon name="close" />
         </button>
       </header>
-      {discoveries.length === 0 ? (
-        <div className="discovery-log__empty">
-          <span aria-hidden="true">🔭</span>
-          <p>{JOURNEY_UI_TEXT.emptyLog[locale]}</p>
-        </div>
-      ) : (
-        <ol className="discovery-log__list">
-          {discoveries.map((discovery) => (
-            <li className="discovery-log__item" key={discovery.id}>
-              <div>
-                <b>{discovery.label}</b>
-                <span>{discovery.category}</span>
-                <time dateTime={discovery.firstVisitedAt == null ? undefined : new Date(discovery.firstVisitedAt).toISOString()}>
-                  {formatVisitDate(discovery.firstVisitedAt, locale)}
-                </time>
-              </div>
-              {discovery.journey ? (
-                <button type="button" onClick={() => onSelectJourney(discovery.journey!.id)}>
-                  {fr ? `Trajet ${discovery.journey.number}` : `Journey ${discovery.journey.number}`}
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      )}
+      <div className="discovery-log__tabs" role="tablist" aria-label={fr ? 'Sections du carnet' : 'Logbook sections'}>
+        <button
+          type="button"
+          role="tab"
+          id="carnet-tab-discoveries"
+          aria-controls="carnet-panel-discoveries"
+          aria-selected={tab === 'discoveries'}
+          className={tab === 'discoveries' ? 'is-active' : ''}
+          onClick={() => setTab('discoveries')}
+        >
+          {fr ? 'Découvertes' : 'Discoveries'} <span className="discovery-log__count">{discoveries.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="carnet-tab-mysteries"
+          aria-controls="carnet-panel-mysteries"
+          aria-selected={tab === 'mysteries'}
+          className={tab === 'mysteries' ? 'is-active' : ''}
+          onClick={() => setTab('mysteries')}
+        >
+          {fr ? 'Mystères de l’Univers' : 'Mysteries of the Universe'} <span className="discovery-log__count">{mysteryCount}</span>
+        </button>
+      </div>
+      <div role="tabpanel" id="carnet-panel-discoveries" aria-labelledby="carnet-tab-discoveries" hidden={tab !== 'discoveries'}>
+        {discoveries.length === 0 ? (
+          <div className="discovery-log__empty">
+            <span aria-hidden="true">🔭</span>
+            <p>{JOURNEY_UI_TEXT.emptyLog[locale]}</p>
+          </div>
+        ) : (
+          <ol className="discovery-log__list">
+            {discoveries.map((discovery) => (
+              <li className="discovery-log__item" key={discovery.id}>
+                <div>
+                  <b>{discovery.label}</b>
+                  <span>{discovery.category}</span>
+                  <time dateTime={discovery.firstVisitedAt == null ? undefined : new Date(discovery.firstVisitedAt).toISOString()}>
+                    {formatVisitDate(discovery.firstVisitedAt, locale)}
+                  </time>
+                </div>
+                {discovery.journey ? (
+                  <button type="button" onClick={() => onSelectJourney(discovery.journey!.id)}>
+                    {fr ? `Trajet ${discovery.journey.number}` : `Journey ${discovery.journey.number}`}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      <div role="tabpanel" id="carnet-panel-mysteries" aria-labelledby="carnet-tab-mysteries" hidden={tab !== 'mysteries'}>
+        {tab === 'mysteries' && <MysteriesSection locale={locale} />}
+      </div>
     </section>
   );
 }
