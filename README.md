@@ -67,6 +67,24 @@ npm run data:sync:solar-system -- --epoch=2026-08-28T00:00:00Z
 
 En cas d’indisponibilité de JPL, le script conserve le dernier snapshot complet au lieu de casser le build.
 
+## Nova — assistant IA
+
+Nova est un assistant IA pour enfants qui répond aux questions d'astronomie avec un circuit de vérification complet. Chaque réponse passe par une classification, un brouillon et une vérification indépendante avant d'être montrée.
+
+```bash
+# Mode mock (sans clé API)
+VITE_NOVA_MOCK=1 npm run dev
+
+# Mode réel (nécessite MISTRAL_API_KEY dans .env)
+cp .env.example .env   # puis renseigner MISTRAL_API_KEY
+npm run dev             # Nova disponible via le plugin Vite
+
+# Serveur autonome (VPS)
+npm run nova:server     # POST http://localhost:3001/api/nova
+```
+
+Documentation complète : [`docs/NOVA.md`](./docs/NOVA.md)
+
 ## Repères du projet
 
 - [`src/app/App.tsx`](./src/app/App.tsx) : routes et orchestration des parcours ;
@@ -76,6 +94,9 @@ En cas d’indisponibilité de JPL, le script conserve le dernier snapshot compl
 - [`src/domain/missionEngine.ts`](./src/domain/missionEngine.ts) : progression événementielle non rétroactive ;
 - [`src/generated/ephemeris.json`](./src/generated/ephemeris.json) : cache JPL utilisé au runtime ;
 - [`data/manifests/assets.manifest.json`](./data/manifests/assets.manifest.json) : catalogue runtime des images ;
-- [`docs/DATA_SOURCES.md`](./docs/DATA_SOURCES.md) et [`ATTRIBUTIONS.md`](./ATTRIBUTIONS.md) : sources, transformations et licences.
+- [`docs/DATA_SOURCES.md`](./docs/DATA_SOURCES.md) et [`ATTRIBUTIONS.md`](./ATTRIBUTIONS.md) : sources, transformations et licences ;
+- [`src/assistant/types.ts`](./src/assistant/types.ts) : contrat Nova (types partagés client/serveur) ;
+- [`server/nova/handler.ts`](./server/nova/handler.ts) : pipeline de vérification Nova ;
+- [`docs/NOVA.md`](./docs/NOVA.md) : architecture, domaines autorisés, coûts et déploiement.
 
 Pour un hébergement statique, configurer une réécriture de toutes les routes applicatives vers `index.html`. Les fichiers présents sous `/assets/` doivent rester servis tels quels.
