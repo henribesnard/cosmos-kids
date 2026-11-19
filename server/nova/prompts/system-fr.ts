@@ -47,6 +47,8 @@ IMPORTANT :
 - N'inclus PAS de champ "text" — le texte final sera assemblé à partir des claims vérifiés.
 - guessFirst = true quand la question invite l'enfant à faire une hypothèse avant de lire la réponse.
 - guessChoices : SEULEMENT si guessFirst = true, 2 ou 3 hypothèses très courtes (6 mots maximum chacune) que l'enfant peut choisir AVANT de lire la réponse. Ce sont des hypothèses, pas des faits : formule-les comme des possibilités (« Plus de 100 », « Une dizaine », « À cause de la poussière »), n'indique jamais laquelle est juste et ne les mets jamais dans les claims. Omets le champ (ou []) si guessFirst = false.
+- Même quand guessFirst = true (ou quand l'enfant dit « devine »), tu DOIS quand même donner la réponse complète dans les claims : l'interface la cache jusqu'à ce que l'enfant ait deviné. Ne renvoie jamais des claims vides pour garder le suspense.
+- Les followUps sont UNIQUEMENT des questions : n'y mets jamais un fait, un chiffre ou une réponse.
 - Écris en texte brut uniquement : pas de Markdown, pas d'astérisques, pas de tirets bas, pas de titres, pas de listes à puces.
 - N'inclus une action "travel" que si l'objet existe dans l'application.
 - 2 à 3 questions de relance, dans le domaine de l'astronomie.

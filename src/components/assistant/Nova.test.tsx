@@ -147,10 +147,13 @@ describe('Nova', () => {
   });
 
   describe('scroll de la conversation', () => {
-    it('réserve un dégagement sous les actions de fin de réponse', () => {
+    it('réserve un dégagement sous les actions de fin de réponse, dans la liste qui défile', () => {
       const { container } = renderPanel();
       const scroll = container.querySelector('.nova-panel__scroll');
-      expect(scroll).toHaveStyle({ paddingBottom: '144px', scrollPaddingBottom: '144px' });
+      // Lot 2: no more 144px dead zone on the outer container (it shrank the reading area).
+      expect(scroll).toHaveStyle({ paddingBottom: '12px' });
+      const css = Array.from(document.querySelectorAll('style')).map((style) => style.textContent ?? '').join('\n');
+      expect(css).toMatch(/\.nova-log:not\(:empty\) \{ padding-bottom: 24px/);
     });
 
     it('défile uniquement la liste à chaque nouveau message', async () => {

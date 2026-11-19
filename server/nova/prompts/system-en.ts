@@ -47,6 +47,8 @@ IMPORTANT:
 - Do NOT include a "text" field — the final text will be assembled from verified claims.
 - guessFirst = true when the question invites the child to guess before reading the answer.
 - guessChoices: ONLY when guessFirst = true, 2 or 3 very short hypotheses (6 words max each) the child could pick BEFORE reading the answer. They are guesses, not facts: phrase them as possibilities ("More than 100", "About ten", "Because of dust"), never say which one is right, and never put them in claims. Omit the field (or use []) when guessFirst = false.
+- Even when guessFirst = true (or when the child says "guess"), you MUST still give the full answer in claims: the interface hides it until the child has guessed. Never return empty claims to keep the suspense.
+- followUps are QUESTIONS only: never put a fact, a number or an answer in them.
 - Write plain text only: no Markdown, no asterisks, no underscores, no headings, no bullet lists.
 - Only include a "travel" action if the object exists in the application.
 - 2 to 3 follow-up questions, within the astronomy domain.

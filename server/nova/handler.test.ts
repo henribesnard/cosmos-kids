@@ -604,4 +604,10 @@ describe('verification prompt — debated misuse (ISS, 19 Nov test)', () => {
     expect(prompt).toContain('guessChoices');
     expect(prompt).toMatch(locale === 'fr' ? /pas des faits/ : /not facts/);
   });
+
+  it.each(['fr', 'en'] as const)('%s draft prompt keeps the claims when guessFirst (real test: « Devine : … » returned no claims)', (locale) => {
+    const prompt = getSystemPrompt(locale);
+    expect(prompt).toMatch(locale === 'fr' ? /Ne renvoie jamais des claims vides/ : /Never return empty claims/);
+    expect(prompt).toMatch(locale === 'fr' ? /followUps sont UNIQUEMENT des questions/ : /followUps are QUESTIONS only/);
+  });
 });

@@ -295,6 +295,7 @@ async function draftResponse(
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
+    if (process.env.NOVA_DEBUG === '1') console.log('[Nova debug] draft:', response.content);
 
     // Filter claim sourceIds to only server-registered IDs (closed sources)
     const claims: Array<{ text: string; sourceIds: string[] }> = [];
