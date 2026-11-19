@@ -13,8 +13,9 @@ import { NOVA_MET_STORAGE_KEY } from './novaHooks';
 
 const ANSWER_TIMEOUT = { timeout: 6000 };
 vi.setConfig({ testTimeout: 12_000 });
+const nativeScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 
-function renderPanel(overrides: Partial<React.ComponentProps<typeof NovaPanel>> = {}) {
+function renderPanel(overrides: Partial<React.ComponentProps<typeof NovaPanel>> = {}, container?: HTMLElement) {
   const props = {
     locale: useCosmosStore.getState().locale,
     open: true,
@@ -25,7 +26,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof NovaPanel>> 
     onOpenParents: vi.fn(),
     ...overrides,
   };
-  const utils = render(<MemoryRouter><NovaPanel {...props} /></MemoryRouter>);
+  const utils = render(<MemoryRouter><NovaPanel {...props} /></MemoryRouter>, container ? { container } : {});
   return { ...utils, props };
 }
 
@@ -71,11 +72,21 @@ describe('Nova', () => {
     window.localStorage.clear();
     window.history.replaceState(null, '', '/?nova=mock');
     useCosmosStore.getState().reset();
+    if (typeof HTMLElement.prototype.scrollTo !== 'function') {
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        configurable: true,
+        value: function (this: HTMLElement, options: ScrollToOptions) {
+          this.scrollTop = options.top ?? 0;
+        },
+      });
+    }
   });
 
   afterEach(() => {
     cleanup();
     window.history.replaceState(null, '', '/');
+    if (nativeScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', nativeScrollTo);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
   });
 
   describe('dock', () => {
@@ -136,6 +147,64 @@ describe('Nova', () => {
       const { container } = renderPanel();
       const scroll = container.querySelector('.nova-panel__scroll');
       expect(scroll).toHaveStyle({ paddingBottom: '144px', scrollPaddingBottom: '144px' });
+    });
+
+    it('défile uniquement la liste à chaque nouveau message', async () => {
+      const shell = document.createElement('div');
+      shell.className = 'app-shell';
+      document.body.appendChild(shell);
+      const { container, props, rerender, unmount } = renderPanel({}, shell);
+      const log = container.querySelector<HTMLOListElement>('.nova-log');
+      expect(log).not.toBeNull();
+      if (!log) throw new Error('Conversation log not rendered');
+
+      const rect = (top: number): DOMRect => ({
+        x: 0,
+        y: top,
+        top,
+        right: 800,
+        bottom: top + 40,
+        left: 0,
+        width: 800,
+        height: 40,
+        toJSON: () => ({}),
+      });
+      const scrollTo = vi.fn((options: ScrollToOptions) => {
+        log.scrollTop = options.top ?? 0;
+      });
+      Object.defineProperty(log, 'scrollTo', { configurable: true, value: scrollTo });
+      const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this === log) return rect(100);
+        if (this.classList.contains('nova-msg--child')) return rect(240 - log.scrollTop);
+        if (this.classList.contains('nova-msg--nova')) return rect(360 - log.scrollTop);
+        return rect(0);
+      });
+
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      shell.scrollTop = 0;
+
+      try {
+        await ask('Combien de lunes a Saturne ?');
+        expect(await screen.findByText(/Je lis bien ta question|Je regarde dans mon carnet de bord/)).toBeInTheDocument();
+        expect(scrollTo).toHaveBeenCalledTimes(1);
+        expect(scrollTo).toHaveBeenNthCalledWith(1, { top: 140, behavior: 'auto' });
+
+        expect(await screen.findByRole('button', { name: /^Vérifié/ }, ANSWER_TIMEOUT)).toBeInTheDocument();
+        expect(scrollTo).toHaveBeenCalledTimes(2);
+        expect(scrollTo).toHaveBeenNthCalledWith(2, { top: 260, behavior: 'auto' });
+        expect(log.scrollTop).toBe(260);
+        expect(log.lastElementChild?.getBoundingClientRect().top).toBe(log.getBoundingClientRect().top);
+        expect(shell.scrollTop).toBe(0);
+        expect((document.scrollingElement ?? document.documentElement).scrollTop).toBe(0);
+
+        rerender(<MemoryRouter><NovaPanel {...props} reducedMotion={false} /></MemoryRouter>);
+        expect(scrollTo).toHaveBeenCalledTimes(2);
+      } finally {
+        bounds.mockRestore();
+        unmount();
+        shell.remove();
+      }
     });
   });
 

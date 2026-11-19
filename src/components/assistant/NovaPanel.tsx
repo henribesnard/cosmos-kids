@@ -53,12 +53,17 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const logRef = useRef<HTMLOListElement>(null);
+  const reducedMotionRef = useRef(reducedMotion);
+  const lastMessageId = messages[messages.length - 1]?.id;
 
   const [draft, setDraft] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [arrivals, setArrivals] = useState<Readonly<Record<string, AssistantPhase>>>({});
   const [guesses, setGuesses] = useState<Readonly<Record<string, GuessState>>>({});
   const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    reducedMotionRef.current = reducedMotion;
+  }, [reducedMotion]);
 
   // Remember the phase in which each Nova message arrived (rate-limited vs error).
   const lastNova = lastNovaMessage(messages);
@@ -95,12 +100,19 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
     if (!open) stopSpeech();
   }, [open, stopSpeech]);
 
-  // Keep the latest exchange in view.
+  // Keep each arriving message at the top of the conversation list.
   useEffect(() => {
     const log = logRef.current;
     const last = log?.lastElementChild as HTMLElement | null | undefined;
-    last?.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
-  }, [messages.length, busy, reducedMotion]);
+    if (!log || !last) return;
+
+    const logTop = log.getBoundingClientRect().top;
+    const lastTop = last.getBoundingClientRect().top;
+    log.scrollTo({
+      top: Math.max(0, log.scrollTop + lastTop - logTop),
+      behavior: reducedMotionRef.current ? 'auto' : 'smooth',
+    });
+  }, [lastMessageId]);
 
   const send = (text: string) => {
     const question = text.trim();

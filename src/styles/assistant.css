@@ -63,7 +63,7 @@
 .nova-levels { flex: none; margin: 14px 0 10px; }
 .nova-levels button { color: #a5b2cb; font-size: 15px; font-weight: 600; height: auto; min-height: var(--nova-target); }
 
-.nova-panel__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 4px 144px 0; scroll-padding-bottom: 144px; scrollbar-color: rgba(99,230,255,.25) transparent; }
+.nova-panel__scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 4px 144px 0; scroll-padding-bottom: 144px; scrollbar-color: rgba(99,230,255,.25) transparent; }
 
 /* ---------- Empty state ---------- */
 .nova-empty { padding: 10px 4px 4px; }
@@ -71,7 +71,7 @@
 .nova-golden-rule { background: rgba(99, 230, 255, .08); border: 1px solid rgba(99, 230, 255, .22); border-radius: 14px; color: var(--cyan-pale); margin-top: 12px !important; padding: 10px 12px; }
 
 /* ---------- Messages ---------- */
-.nova-log { display: grid; gap: 14px; list-style: none; margin: 0; padding: 0; }
+.nova-log { display: grid; flex: 1 1 auto; gap: 14px; list-style: none; margin: 0; min-height: 0; overflow-anchor: none; overflow-y: auto; overscroll-behavior: contain; padding: 0; scrollbar-color: rgba(99,230,255,.25) transparent; }
 .nova-msg { animation: nova-rise .3s ease both; scroll-margin-top: 8px; }
 .nova-msg--child { display: flex; justify-content: flex-end; }
 .nova-msg--nova { align-items: start; display: grid; gap: 8px; grid-template-columns: 38px minmax(0, 1fr); }
