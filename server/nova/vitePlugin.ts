@@ -7,12 +7,44 @@
  *   export default defineConfig({ plugins: [react(), novaPlugin()] });
  */
 
-import type { Plugin, ViteDevServer, PreviewServer } from 'vite';
+import { loadEnv, type Plugin, type ViteDevServer, type PreviewServer } from 'vite';
+
+const NOVA_ROUTE_PATH = '/api/nova';
+
+/**
+ * Server-only env keys that may be copied from .env files into process.env.
+ * Deliberately excludes every VITE_* key: nothing loaded here is ever exposed
+ * to the client bundle (no `define`, no import.meta.env injection).
+ */
+function isNovaServerEnvKey(key: string): boolean {
+  return key === 'MISTRAL_API_KEY' || key === 'EXA_API_KEY' || key.startsWith('NOVA_');
+}
+
+/**
+ * Load server-only variables from the .env files (all prefixes, hence '') into
+ * process.env so the Nova handler can read them in dev and preview — Vite only
+ * exposes VITE_* variables to import.meta.env, never to process.env.
+ *
+ * A value already present in process.env always wins. Key values are never
+ * logged.
+ */
+function loadServerEnv(mode: string, root: string): void {
+  const fileEnv = loadEnv(mode, root, '');
+  for (const key of Object.keys(fileEnv)) {
+    if (!isNovaServerEnvKey(key)) continue;
+    const value = fileEnv[key];
+    if (value !== undefined && value !== '' && process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
 
 export function novaPlugin(): Plugin {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function attachHandler(middlewares: { use: (...args: any[]) => void }): Promise<void> {
-    // Lazy-import the handler to avoid loading server code at build time
+    // Load the handler BEFORE registering the middleware: the hooks below
+    // await this call, so the route is mounted before Vite installs its own
+    // internal middlewares (including the final 404 handler).
     const { handleNovaRequest } = await import('./handler');
 
     // Use Connect-style middleware
@@ -21,7 +53,10 @@ export function novaPlugin(): Plugin {
       res: import('http').ServerResponse,
       next: () => void,
     ) => {
-      if (req.url !== '/api/nova' || (req.method !== 'POST' && req.method !== 'OPTIONS')) {
+      // Compare the path only — req.url may carry a query string
+      const path = (req.url ?? '').split('?')[0];
+
+      if (path !== NOVA_ROUTE_PATH || (req.method !== 'POST' && req.method !== 'OPTIONS')) {
         return next();
       }
 
@@ -74,11 +109,16 @@ export function novaPlugin(): Plugin {
 
   return {
     name: 'nova-api',
-    configureServer(server: ViteDevServer) {
-      attachHandler(server.middlewares);
+    configResolved(config) {
+      // Runs for dev, preview and build; copies only the whitelisted server keys.
+      loadServerEnv(config.mode, config.root);
     },
-    configurePreviewServer(server: PreviewServer) {
-      attachHandler(server.middlewares);
+    async configureServer(server: ViteDevServer) {
+      // Awaited by Vite before its internal middlewares are installed
+      await attachHandler(server.middlewares);
+    },
+    async configurePreviewServer(server: PreviewServer) {
+      await attachHandler(server.middlewares);
     },
   };
 }
