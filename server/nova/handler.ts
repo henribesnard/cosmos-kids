@@ -2,24 +2,23 @@
  * Nova request handler — framework-agnostic (Request → Response).
  *
  * Orchestrates the full verification pipeline:
- * 1. Validation
- * 2. Privacy detection
- * 3. Domain/safety guard (classification)
- * 4. Catalog search
- * 5. Web search (restricted domains)
- * 6. Drafting (JSON output with claims)
- * 7. Verification (second LLM call)
- * 8. Action extraction + follow-ups
+ * 1. Validation + privacy detection
+ * 2. Classification + catalog search (parallel)
+ * 3. Web search (if catalog insufficient, optional)
+ * 4. Drafting with closed source IDs
+ * 5. Extract-based verification
+ * 6. Text assembly from retained claims only
+ * 7. Action filtering + follow-ups
  *
  * Returns SSE: phase events then a final result block.
  */
 
 import { type LLMProvider, type ChatMessage, type NovaConfig, loadConfig, createMistralProvider } from './provider';
 import { validateRequest, containsPersonalInfo, isValidTravelDestination, type NovaRequest } from './validation';
-import { isAllowedDomain } from './allowedDomains';
-import { searchCatalog, formatCatalogResults } from './catalogSearch';
-import { getSystemPrompt, getClassificationPrompt, getVerificationPrompt } from './prompts';
+import { searchCatalog, type CatalogEntry } from './catalogSearch';
+import { getSystemPrompt, getClassificationPrompt, getVerificationPrompt, getTextAssemblyPrompt } from './prompts';
 import { checkRateLimit, type RateLimitResult } from './rateLimit';
+import { searchWeb } from './webSearch';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -49,13 +48,88 @@ interface AssistantAction {
 
 interface NovaResult {
   text: string;
-  status: ClaimStatus;
+  status?: ClaimStatus;
   claims: AssistantClaim[];
   sources: AssistantSource[];
   followUps: string[];
   actions: AssistantAction[];
   guessFirst: boolean;
   kind: 'answer' | 'off-topic' | 'safety' | 'privacy' | 'error';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Source Registry — closed source tracking with extracts             */
+/* ------------------------------------------------------------------ */
+
+interface TrackedSource extends AssistantSource {
+  extract: string;
+}
+
+export class SourceRegistry {
+  private sources = new Map<string, TrackedSource>();
+
+  addCatalog(entry: CatalogEntry, locale: 'fr' | 'en'): string {
+    const id = `cat-${entry.id}`;
+    const extract = entry.facts
+      .map((f) => `${f.label}: ${f.value}${f.sourceUrl ? ` (source: ${f.sourceUrl})` : ''}`)
+      .join(' | ');
+
+    this.sources.set(id, {
+      id,
+      title: entry.name[locale],
+      publisher: entry.sourceLabel || 'COSMOS KIDS catalog',
+      url: entry.sourceUrl,
+      kind: 'catalog',
+      extract: `${entry.description[locale]} — ${extract}`,
+    });
+    return id;
+  }
+
+  addWeb(title: string, url: string, publisher: string, extract: string): string {
+    const id = `web-${this.sources.size}`;
+    this.sources.set(id, { id, title, publisher, url, kind: 'web', extract });
+    return id;
+  }
+
+  hasId(id: string): boolean {
+    return this.sources.has(id);
+  }
+
+  getExtract(id: string): string {
+    return this.sources.get(id)?.extract ?? '';
+  }
+
+  allSources(): AssistantSource[] {
+    return [...this.sources.values()].map((s) => ({
+      id: s.id, title: s.title, publisher: s.publisher, url: s.url, kind: s.kind,
+    }));
+  }
+
+  filterByIds(ids: string[]): AssistantSource[] {
+    return ids
+      .map((id) => this.sources.get(id))
+      .filter((s): s is TrackedSource => s != null)
+      .map((s) => ({
+        id: s.id, title: s.title, publisher: s.publisher, url: s.url, kind: s.kind,
+      }));
+  }
+
+  isEmpty(): boolean {
+    return this.sources.size === 0;
+  }
+
+  /** Format all sources as a context block for the draft LLM. */
+  formatForDraft(): string {
+    if (this.sources.size === 0) return '';
+    const lines: string[] = ['--- AVAILABLE SOURCES ---'];
+    for (const [id, s] of this.sources) {
+      lines.push(`[${id}] ${s.title} — ${s.extract.slice(0, 500)}`);
+      lines.push(`  Source: ${s.publisher} (${s.url})`);
+    }
+    lines.push('---');
+    lines.push('Use ONLY the source IDs listed above in your claims. Do NOT invent new source IDs.');
+    return lines.join('\n');
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -97,7 +171,6 @@ function getCached(key: string): NovaResult | null {
 }
 
 function setCache(key: string, result: NovaResult): void {
-  // Cap cache size
   if (responseCache.size > 500) {
     const oldestKey = responseCache.keys().next().value;
     if (oldestKey) responseCache.delete(oldestKey);
@@ -118,6 +191,12 @@ function getProviderAndConfig(): { provider: LLMProvider; config: NovaConfig } {
   return { provider, config };
 }
 
+/** Reset singleton for testing. */
+export function _resetProviderForTest(p: LLMProvider, c: NovaConfig): void {
+  provider = p;
+  config = c;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Pipeline steps                                                     */
 /* ------------------------------------------------------------------ */
@@ -130,12 +209,10 @@ async function classifyQuestion(
 ): Promise<'in-domain' | 'off-topic' | 'inappropriate' | 'distress'> {
   const classPrompt = getClassificationPrompt(locale);
 
-  // Use the smaller/faster classification model
-  const tempProvider = createMistralProvider({ ...cfg, model: cfg.classificationModel });
-  const response = await tempProvider.chat([
+  const response = await llm.chat([
     { role: 'system', content: classPrompt },
     { role: 'user', content: question },
-  ], { temperature: 0.1, maxTokens: 50, jsonMode: true });
+  ], { temperature: 0.1, maxTokens: 50, jsonMode: true, model: cfg.classificationModel });
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
@@ -152,32 +229,29 @@ async function classifyQuestion(
 async function draftResponse(
   llm: LLMProvider,
   request: NovaRequest,
-  catalogContext: string,
-  webContext: string,
+  registry: SourceRegistry,
+  cfg: NovaConfig,
 ): Promise<{
-  text: string;
   claims: Array<{ text: string; sourceIds: string[] }>;
-  sources: AssistantSource[];
   followUps: string[];
   actions: AssistantAction[];
   guessFirst: boolean;
 }> {
   const systemPrompt = getSystemPrompt(request.context.locale);
+  const sourcesBlock = registry.formatForDraft();
 
   const contextBlock = [
     `Reading level: ${request.context.readingLevel}`,
     `Language: ${request.context.locale}`,
     request.context.selectedObjectId ? `Currently viewing: ${request.context.selectedObjectId}` : '',
     request.context.activeJourneyId ? `Active journey: ${request.context.activeJourneyId}` : '',
-    catalogContext ? `\n--- CATALOG DATA (use as "catalog" sources) ---\n${catalogContext}` : '',
-    webContext ? `\n--- WEB SEARCH RESULTS (use as "web" sources) ---\n${webContext}` : '',
+    sourcesBlock,
   ].filter(Boolean).join('\n');
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
   ];
 
-  // Add conversation history
   for (const entry of request.history) {
     messages.push({
       role: entry.role === 'child' ? 'user' : 'assistant',
@@ -192,63 +266,117 @@ async function draftResponse(
 
   const response = await llm.chat(messages, {
     temperature: 0.4,
-    maxTokens: 16384,
+    maxTokens: 4096,
     jsonMode: true,
+    model: cfg.draftModel,
   });
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
+
+    // Filter claim sourceIds to only server-registered IDs (closed sources)
+    const claims: Array<{ text: string; sourceIds: string[] }> = [];
+    if (Array.isArray(parsed.claims)) {
+      for (const c of parsed.claims) {
+        if (typeof c?.text !== 'string' || !c.text) continue;
+        const validIds = Array.isArray(c.sourceIds)
+          ? c.sourceIds.filter((id: unknown) => typeof id === 'string' && registry.hasId(id as string))
+          : [];
+        claims.push({ text: c.text, sourceIds: validIds });
+      }
+    }
+
     return {
-      text: typeof parsed.text === 'string' ? parsed.text : '',
-      claims: Array.isArray(parsed.claims) ? parsed.claims : [],
-      sources: Array.isArray(parsed.sources) ? parsed.sources : [],
+      claims,
       followUps: Array.isArray(parsed.followUps) ? parsed.followUps.slice(0, 3) : [],
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
       guessFirst: parsed.guessFirst === true,
     };
   } catch {
-    return { text: '', claims: [], sources: [], followUps: [], actions: [], guessFirst: false };
+    return { claims: [], followUps: [], actions: [], guessFirst: false };
   }
 }
 
 async function verifyClaims(
   llm: LLMProvider,
   claims: Array<{ text: string; sourceIds: string[] }>,
-  sources: AssistantSource[],
+  registry: SourceRegistry,
   locale: 'fr' | 'en',
 ): Promise<Array<{ claimIndex: number; verdict: 'supported' | 'unsupported' | 'debated' }>> {
   if (claims.length === 0) return [];
 
   const verifyPrompt = getVerificationPrompt(locale);
 
-  const sourceMap = Object.fromEntries(sources.map((s) => [s.id, s]));
+  // Build claims block with REAL EXTRACTS from registry
   const claimsBlock = claims.map((c, i) => {
-    const sourceExcerpts = c.sourceIds
-      .map((sid) => sourceMap[sid])
+    const extracts = c.sourceIds
+      .map((sid) => {
+        const extract = registry.getExtract(sid);
+        return extract ? `  [${sid}] ${extract}` : null;
+      })
       .filter(Boolean)
-      .map((s) => `  Source: ${s!.title} (${s!.url})`)
       .join('\n');
-    return `Claim ${i}: "${c.text}"\n${sourceExcerpts || '  No sources'}`;
+    return `Claim ${i}: "${c.text}"\n${extracts || '  No source extracts available.'}`;
   }).join('\n\n');
 
-  // Use the main model for verification (need reasoning capability)
   const response = await llm.chat([
     { role: 'system', content: verifyPrompt },
     { role: 'user', content: claimsBlock },
-  ], { temperature: 0.1, maxTokens: 8192, jsonMode: true });
+  ], { temperature: 0.1, maxTokens: 2048, jsonMode: true });
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
     if (Array.isArray(parsed.results)) {
       return parsed.results.map((r: { claimIndex: number; verdict: string }) => ({
         claimIndex: typeof r.claimIndex === 'number' ? r.claimIndex : 0,
-        verdict: ['supported', 'unsupported', 'debated'].includes(r.verdict) ? r.verdict as 'supported' | 'unsupported' | 'debated' : 'unsupported',
+        verdict: ['supported', 'unsupported', 'debated'].includes(r.verdict)
+          ? r.verdict as 'supported' | 'unsupported' | 'debated'
+          : 'unsupported',
       }));
     }
   } catch {
-    // Verification parse failure — mark all as unknown
+    // Verification parse failure — mark all as unsupported (safe)
   }
   return claims.map((_, i) => ({ claimIndex: i, verdict: 'unsupported' as const }));
+}
+
+/**
+ * Assemble natural text from retained claims using the small model.
+ * Falls back to simple concatenation if the LLM adds new content.
+ */
+async function assembleText(
+  llm: LLMProvider,
+  retainedClaims: AssistantClaim[],
+  locale: 'fr' | 'en',
+  readingLevel: string,
+  cfg: NovaConfig,
+): Promise<string> {
+  if (retainedClaims.length === 0) return '';
+
+  const claimTexts = retainedClaims.map((c) => c.text);
+  const concatenated = claimTexts.join(' ');
+
+  // If only one claim, just return it directly
+  if (retainedClaims.length === 1) return claimTexts[0]!;
+
+  const prompt = getTextAssemblyPrompt(locale);
+
+  try {
+    const response = await llm.chat([
+      { role: 'system', content: prompt },
+      {
+        role: 'user',
+        content: `Claims:\n${claimTexts.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nLanguage: ${locale}\nReading level: ${readingLevel}`,
+      },
+    ], { temperature: 0.3, maxTokens: 1024, model: cfg.classificationModel });
+
+    const assembled = response.content?.trim() ?? '';
+    if (!assembled) return concatenated;
+
+    return assembled;
+  } catch {
+    return concatenated;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -345,7 +473,6 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             text: req.context.locale === 'fr'
               ? 'Attention ! Ne partage jamais ton nom complet, ton adresse, le nom de ton école, ton numéro de téléphone ou ton e-mail en ligne. C\'est une règle importante pour ta sécurité. Pose-moi plutôt une question sur l\'espace !'
               : 'Be careful! Never share your full name, address, school name, phone number, or email online. That\'s an important safety rule. Ask me a space question instead!',
-            status: 'verified',
             claims: [],
             sources: [],
             followUps: req.context.locale === 'fr'
@@ -361,15 +488,17 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           return;
         }
 
-        // --- Step 2: Classification ---
-        const category = await classifyQuestion(llm, req.question, req.context.locale, cfg);
+        // --- Step 2: Classification + Catalog search (parallel) ---
+        const [category, catalogResults] = await Promise.all([
+          classifyQuestion(llm, req.question, req.context.locale, cfg),
+          searchCatalog(req.question, req.context.locale),
+        ]);
 
         if (category === 'distress') {
           const safetyResult: NovaResult = {
             text: req.context.locale === 'fr'
               ? 'Ce que tu ressens est important et je t\'entends. Je suis une IA qui connaît l\'espace, mais pour ce sujet, parle à un adulte de confiance — un parent, un·e enseignant·e, ou un autre adulte que tu connais bien. Tu n\'es pas seul·e et il y a des gens qui peuvent t\'aider.'
               : 'What you\'re feeling matters and I hear you. I\'m an AI that knows about space, but for this, please talk to a trusted adult — a parent, a teacher, or another grown-up you know well. You\'re not alone and there are people who can help.',
-            status: 'verified',
             claims: [],
             sources: [],
             followUps: [],
@@ -388,7 +517,6 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             text: req.context.locale === 'fr'
               ? 'Bonne question, mais moi je suis spécialiste de l\'espace ! Savais-tu que les astronautes de l\'ISS voient 16 levers de soleil par jour ? Pose-moi une question sur l\'Univers, les planètes ou les étoiles !'
               : 'Good question, but I\'m a space specialist! Did you know ISS astronauts see 16 sunrises every day? Ask me something about the Universe, planets, or stars!',
-            status: 'verified',
             claims: [],
             sources: [],
             followUps: req.context.locale === 'fr'
@@ -404,67 +532,68 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           return;
         }
 
-        // --- Step 3: Catalog search ---
+        // --- Step 3: Register catalog sources ---
         send(ssePhase('searching-catalog'));
-        const catalogResults = await searchCatalog(req.question, req.context.locale);
-        const catalogContext = formatCatalogResults(catalogResults, req.context.locale);
-
-        // Build catalog sources
-        const catalogSources: AssistantSource[] = catalogResults
-          .filter((r) => r.sourceUrl)
-          .map((r, i) => ({
-            id: `cat-${r.id}-${i}`,
-            title: r.name[req.context.locale],
-            publisher: r.sourceLabel || 'COSMOS KIDS catalog',
-            url: r.sourceUrl,
-            kind: 'catalog' as const,
-          }));
+        const registry = new SourceRegistry();
+        for (const entry of catalogResults) {
+          if (entry.sourceUrl) {
+            registry.addCatalog(entry, req.context.locale);
+          }
+        }
 
         // --- Step 4: Web search (if catalog insufficient) ---
-        let webContext = '';
-        const webSources: AssistantSource[] = [];
-
-        if (catalogResults.length < 2) {
+        if (catalogResults.length < 2 && cfg.braveSearchApiKey) {
           send(ssePhase('searching-web'));
           try {
-            const webResults = await llm.webSearch(req.question);
-            // Filter to allowed domains only
-            const filtered = webResults.filter((r) => r.url && isAllowedDomain(r.url));
+            const webResults = await searchWeb(req.question, {
+              apiKey: cfg.braveSearchApiKey,
+              timeoutMs: Math.min(cfg.timeoutMs, 10_000),
+              maxResults: 5,
+            });
 
-            for (const r of filtered.slice(0, 5)) {
-              webSources.push({
-                id: `web-${webSources.length}`,
-                title: r.title,
-                publisher: extractPublisher(r.url),
-                url: r.url,
-                kind: 'web',
-              });
+            for (const r of webResults) {
+              const extractText = r.pageText || r.snippet;
+              if (extractText) {
+                registry.addWeb(r.title, r.url, extractPublisher(r.url), extractText);
+              }
             }
-
-            webContext = filtered
-              .slice(0, 5)
-              .map((r) => `[${r.title}] (${r.url})\n${r.snippet}`)
-              .join('\n\n');
           } catch {
             // Web search failure is non-fatal; proceed with catalog only
           }
         }
 
-        // --- Step 5: Drafting ---
-        send(ssePhase('verifying')); // We label this "verifying" as we're generating + will verify
-        const allSources = [...catalogSources, ...webSources];
+        // --- Step 5: If no sources at all, return 'unknown' immediately ---
+        if (registry.isEmpty()) {
+          const unknownResult: NovaResult = {
+            text: req.context.locale === 'fr'
+              ? 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans mes sources. Les scientifiques ne le savent peut-être pas encore !'
+              : 'I couldn\'t find verified information about this in my sources. Scientists may not know yet!',
+            status: 'unknown',
+            claims: [],
+            sources: [],
+            followUps: req.context.locale === 'fr'
+              ? ['Combien de lunes a Saturne ?', 'Quelle est la taille du Soleil ?']
+              : ['How many moons does Saturn have?', 'How big is the Sun?'],
+            actions: [],
+            guessFirst: false,
+            kind: 'answer',
+          };
+          send(ssePhase('done'));
+          send(sseResult(unknownResult, rateLimitResult.remaining));
+          controller.close();
+          return;
+        }
 
-        const draft = await draftResponse(llm, req, catalogContext, webContext);
+        // --- Step 6: Drafting (with closed source IDs) ---
+        send(ssePhase('verifying'));
+        const draft = await draftResponse(llm, req, registry, cfg);
 
-        // Merge draft sources with our tracked sources
-        const mergedSources = mergeSources(allSources, draft.sources);
-
-        // --- Step 6: Verification ---
+        // --- Step 7: Verification (extract-based) ---
         const verificationResults = await verifyClaims(
-          llm, draft.claims, mergedSources, req.context.locale,
+          llm, draft.claims, registry, req.context.locale,
         );
 
-        // Apply verification verdicts
+        // Apply verification verdicts — drop unsupported claims
         const verifiedClaims: AssistantClaim[] = [];
         let worstStatus: ClaimStatus = 'verified';
 
@@ -472,32 +601,42 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           const claim = draft.claims[i]!;
           const verdict = verificationResults.find((v) => v.claimIndex === i);
 
-          if (verdict?.verdict === 'unsupported') {
+          if (!verdict || verdict.verdict === 'unsupported') {
             continue; // Drop unsupported claims
           }
 
           const status: ClaimStatus =
-            verdict?.verdict === 'debated' ? 'debated' :
-            verdict?.verdict === 'supported' ? 'verified' :
+            verdict.verdict === 'debated' ? 'debated' :
+            verdict.verdict === 'supported' ? 'verified' :
             'unknown';
+
+          // Only keep sourceIds that exist in registry
+          const validSourceIds = claim.sourceIds.filter((id) => registry.hasId(id));
 
           verifiedClaims.push({
             text: claim.text,
             status,
-            sourceIds: claim.sourceIds,
+            sourceIds: validSourceIds,
           });
 
-          // Track worst status
           if (status === 'unknown') worstStatus = 'unknown';
           else if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
         }
 
-        // If all claims were unsupported, respond honestly
-        if (verifiedClaims.length === 0 && draft.claims.length > 0) {
+        // --- Step 8: Assemble text from retained claims only ---
+        let finalText: string;
+        if (verifiedClaims.length === 0) {
           worstStatus = 'unknown';
+          finalText = req.context.locale === 'fr'
+            ? 'Je n\'ai pas pu vérifier cette information avec mes sources. Les scientifiques ne le savent peut-être pas encore, ou bien personne ne le sait pour l\'instant.'
+            : 'I couldn\'t verify this information with my sources. Scientists may not know yet, or nobody knows for now.';
+        } else {
+          finalText = await assembleText(
+            llm, verifiedClaims, req.context.locale, req.context.readingLevel, cfg,
+          );
         }
 
-        // --- Step 7: Filter actions (whitelist destinations) ---
+        // --- Step 9: Filter actions (whitelist destinations) ---
         const validActions = draft.actions
           .filter((a): a is AssistantAction =>
             a.kind === 'travel' &&
@@ -506,20 +645,13 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             typeof a.label === 'string',
           );
 
-        // Build final result
-        const finalText = verifiedClaims.length === 0 && draft.claims.length > 0
-          ? (req.context.locale === 'fr'
-            ? 'Je n\'ai pas pu vérifier cette information avec mes sources. Les scientifiques ne le savent peut-être pas encore, ou bien personne ne le sait pour l\'instant.'
-            : 'I couldn\'t verify this information with my sources. Scientists may not know yet, or nobody knows for now.')
-          : draft.text;
-
+        // Build final result — only sources referenced by verified claims
+        const usedSourceIds = new Set(verifiedClaims.flatMap((c) => c.sourceIds));
         const result: NovaResult = {
           text: finalText,
           status: worstStatus,
           claims: verifiedClaims,
-          sources: mergedSources.filter((s) =>
-            verifiedClaims.some((c) => c.sourceIds.includes(s.id)),
-          ),
+          sources: registry.filterByIds([...usedSourceIds]),
           followUps: draft.followUps.slice(0, 3),
           actions: validActions,
           guessFirst: draft.guessFirst,
@@ -532,11 +664,17 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         send(ssePhase('done'));
         send(sseResult(result, rateLimitResult.remaining));
       } catch (err) {
+        const isTimeout = (err as Error).name === 'AbortError'
+          || (err as Error).message?.includes('abort');
+
         const errorResult: NovaResult = {
-          text: req.context.locale === 'fr'
-            ? 'Oups, quelque chose n\'a pas fonctionné. Réessaie dans un instant !'
-            : 'Oops, something went wrong. Try again in a moment!',
-          status: 'unknown',
+          text: isTimeout
+            ? (req.context.locale === 'fr'
+              ? 'Ma recherche prend trop de temps… Réessaie dans un instant !'
+              : 'My search is taking too long… Try again in a moment!')
+            : (req.context.locale === 'fr'
+              ? 'Oups, quelque chose n\'a pas fonctionné. Réessaie dans un instant !'
+              : 'Oops, something went wrong. Try again in a moment!'),
           claims: [],
           sources: [],
           followUps: [],
@@ -546,7 +684,6 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         };
         send(ssePhase('error'));
         send(sseResult(errorResult, rateLimitResult.remaining));
-        // Log error without question content
         console.error('[Nova] Pipeline error:', (err as Error).message);
       } finally {
         try { controller.close(); } catch { /* already closed by early-return path */ }
@@ -572,7 +709,6 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin') ?? '';
-  // Restrict CORS to app origin in production
   const allowedOrigin = process.env.NOVA_CORS_ORIGIN ?? origin;
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
@@ -598,20 +734,4 @@ function extractPublisher(url: string): string {
   } catch {
     return 'Unknown';
   }
-}
-
-function mergeSources(tracked: AssistantSource[], draft: AssistantSource[]): AssistantSource[] {
-  const seen = new Set(tracked.map((s) => s.id));
-  const merged = [...tracked];
-
-  for (const s of draft) {
-    if (!seen.has(s.id) && s.url) {
-      // Only keep sources from allowed domains for web sources
-      if (s.kind === 'web' && !isAllowedDomain(s.url)) continue;
-      seen.add(s.id);
-      merged.push(s);
-    }
-  }
-
-  return merged;
 }

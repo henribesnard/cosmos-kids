@@ -40,11 +40,6 @@ export interface ChatResponse {
   readonly usage?: { promptTokens: number; completionTokens: number };
 }
 
-export interface WebSearchResult {
-  readonly title: string;
-  readonly url: string;
-  readonly snippet: string;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Provider interface                                                 */
@@ -56,6 +51,7 @@ export interface LLMProvider {
     temperature?: number;
     maxTokens?: number;
     jsonMode?: boolean;
+    model?: string;
   }): Promise<ChatResponse>;
 
   /** Chat with function-calling tools. */
@@ -68,9 +64,6 @@ export interface LLMProvider {
       toolChoice?: 'auto' | 'none' | 'required';
     },
   ): Promise<ChatResponse>;
-
-  /** Web search via the Conversations API. Returns raw results. */
-  webSearch(query: string): Promise<readonly WebSearchResult[]>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,16 +73,19 @@ export interface LLMProvider {
 export interface NovaConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly draftModel: string;
   readonly classificationModel: string;
   readonly maxQuestionsPerHour: number;
   readonly timeoutMs: number;
   readonly maxHistoryMessages: number;
+  readonly braveSearchApiKey: string;
 }
 
 const DEFAULT_MODEL = 'mistral-large-latest';
+const DEFAULT_DRAFT_MODEL = 'mistral-small-latest';
 const DEFAULT_CLASSIFICATION_MODEL = 'mistral-small-latest';
 const DEFAULT_MAX_QUESTIONS_PER_HOUR = 20;
-const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_HISTORY_MESSAGES = 6;
 
 export function loadConfig(): NovaConfig {
@@ -102,10 +98,12 @@ export function loadConfig(): NovaConfig {
   return {
     apiKey,
     model: process.env.NOVA_MODEL ?? DEFAULT_MODEL,
+    draftModel: process.env.NOVA_DRAFT_MODEL ?? DEFAULT_DRAFT_MODEL,
     classificationModel: process.env.NOVA_CLASSIFICATION_MODEL ?? DEFAULT_CLASSIFICATION_MODEL,
     maxQuestionsPerHour: Number(process.env.NOVA_MAX_QUESTIONS_PER_HOUR) || DEFAULT_MAX_QUESTIONS_PER_HOUR,
     timeoutMs: Number(process.env.NOVA_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
     maxHistoryMessages: Number(process.env.NOVA_MAX_HISTORY_MESSAGES) || DEFAULT_MAX_HISTORY_MESSAGES,
+    braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY ?? '',
   };
 }
 
@@ -166,7 +164,7 @@ export function createMistralProvider(config: NovaConfig): LLMProvider {
   return {
     async chat(messages, options = {}) {
       const body: Record<string, unknown> = {
-        model: config.model,
+        model: options.model ?? config.model,
         messages,
         temperature: options.temperature ?? 0.3,
         max_tokens: options.maxTokens ?? 1024,
@@ -232,78 +230,5 @@ export function createMistralProvider(config: NovaConfig): LLMProvider {
       };
     },
 
-    async webSearch(query) {
-      // Use Mistral Conversations API with built-in web_search connector.
-      const body = {
-        model: config.model,
-        inputs: [
-          {
-            role: 'user' as const,
-            content: `Search the web for information about: ${query}\n\nReturn ONLY the factual information found, with source URLs. Focus on results from: nasa.gov, esa.int, jpl.nasa.gov, iau.org, and other authoritative astronomy sources.`,
-          },
-        ],
-        tools: [{ type: 'web_search' as const }],
-      };
-
-      const res = await fetchWithTimeout(`${MISTRAL_API_BASE}/conversations`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Mistral Conversations API error ${res.status}: ${text.slice(0, 200)}`);
-      }
-
-      const json = await res.json() as {
-        outputs?: Array<{
-          role: string;
-          content: string;
-          citations?: Array<{ url: string; title: string; snippet?: string }>;
-        }>;
-        choices?: Array<{
-          messages?: Array<{
-            role: string;
-            content: string;
-            citations?: Array<{ url: string; title: string; snippet?: string }>;
-          }>;
-        }>;
-      };
-
-      // Extract citations from the response
-      const results: WebSearchResult[] = [];
-      const seen = new Set<string>();
-
-      // Handle both response formats (outputs or choices.messages)
-      const outputMessages = json.outputs
-        ?? json.choices?.flatMap((c) => c.messages ?? [])
-        ?? [];
-
-      for (const msg of outputMessages) {
-        if (msg.citations) {
-          for (const citation of msg.citations) {
-            if (!seen.has(citation.url)) {
-              seen.add(citation.url);
-              results.push({
-                title: citation.title ?? '',
-                url: citation.url,
-                snippet: citation.snippet ?? msg.content?.slice(0, 300) ?? '',
-              });
-            }
-          }
-        }
-        // If no citations but we have content, return as a single result
-        if (!msg.citations && msg.content && results.length === 0) {
-          results.push({
-            title: 'Web search result',
-            url: '',
-            snippet: msg.content.slice(0, 500),
-          });
-        }
-      }
-
-      return results;
-    },
   };
 }
