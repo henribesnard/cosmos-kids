@@ -63,7 +63,7 @@
 .nova-levels { flex: none; margin: 14px 0 10px; }
 .nova-levels button { color: #a5b2cb; font-size: 15px; font-weight: 600; height: auto; min-height: var(--nova-target); }
 
-.nova-panel__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 4px 8px 0; scrollbar-color: rgba(99,230,255,.25) transparent; }
+.nova-panel__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 4px 144px 0; scroll-padding-bottom: 144px; scrollbar-color: rgba(99,230,255,.25) transparent; }
 
 /* ---------- Empty state ---------- */
 .nova-empty { padding: 10px 4px 4px; }

@@ -131,6 +131,14 @@ describe('Nova', () => {
     });
   });
 
+  describe('scroll de la conversation', () => {
+    it('réserve un dégagement sous les actions de fin de réponse', () => {
+      const { container } = renderPanel();
+      const scroll = container.querySelector('.nova-panel__scroll');
+      expect(scroll).toHaveStyle({ paddingBottom: '144px', scrollPaddingBottom: '144px' });
+    });
+  });
+
   describe('sceau de vérité', () => {
     it('rend trois badges distincts par texte et par forme', () => {
       const { container } = render(
