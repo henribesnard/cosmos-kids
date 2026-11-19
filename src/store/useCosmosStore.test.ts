@@ -3,6 +3,7 @@ import { subscribe, type CosmosEvent } from '../domain/events';
 import { startMissionEngine, stopMissionEngine } from '../domain/missionEngine';
 import {
   COSMOS_STORE_STORAGE_KEY,
+  DEFAULT_READING_LEVEL,
   migratePersistedState,
   selectIsTravelling,
   useCosmosStore,
@@ -162,7 +163,7 @@ describe('useCosmosStore', () => {
       version: number;
     };
 
-    expect(persisted.version).toBe(4);
+    expect(persisted.version).toBe(5);
     expect(persisted.state).toMatchObject({
       view: 'solar',
       selectedObjectId: 'jupiter',
@@ -374,6 +375,77 @@ describe('useCosmosStore', () => {
       id: 'test-1',
       question: 'What is dark energy?',
       locale: 'en',
+    });
+  });
+
+  describe('niveau de lecture partagé (v5)', () => {
+    const v4State = {
+      view: 'solar',
+      selectedObjectId: 'mars',
+      locale: 'fr',
+      showOrbits: true,
+      showLabels: true,
+      snapshotDate: null,
+      mission: {
+        visitedObjectIds: ['mars'],
+        visitedDeepSkyIds: [],
+        visitedConstellationIds: [],
+        visitedSpecialIds: [],
+        firstVisitedAt: { mars: 1000 },
+        activeJourneyId: null,
+        runs: {},
+      },
+      mysteries: [{ id: 'm1', question: 'Q ?', locale: 'fr', savedAt: 5 }],
+    };
+
+    it('migre v4 → v5 avec le niveau par défaut, sans rien perdre', () => {
+      const migrated = migratePersistedState(v4State, 4);
+      expect(migrated.readingLevel).toBe(DEFAULT_READING_LEVEL);
+      expect(migrated.mysteries).toHaveLength(1);
+      expect(migrated.mission.visitedObjectIds).toEqual(['mars']);
+      expect(migrated.selectedObjectId).toBe('mars');
+    });
+
+    it('ignore un readingLevel présent dans un état v4 (champ inconnu avant v5)', () => {
+      expect(migratePersistedState({ ...v4State, readingLevel: 'expert' }, 4).readingLevel).toBe(DEFAULT_READING_LEVEL);
+    });
+
+    it('conserve un niveau v5 valide', () => {
+      expect(migratePersistedState({ ...v4State, readingLevel: 'simple' }, 5).readingLevel).toBe('simple');
+      expect(migratePersistedState({ ...v4State, readingLevel: 'expert' }, 5).readingLevel).toBe('expert');
+    });
+
+    it('résiste à un niveau corrompu', () => {
+      expect(migratePersistedState({ ...v4State, readingLevel: 'genius' }, 5).readingLevel).toBe(DEFAULT_READING_LEVEL);
+      expect(migratePersistedState({ ...v4State, readingLevel: 42 }, 5).readingLevel).toBe(DEFAULT_READING_LEVEL);
+      expect(migratePersistedState(null, 5).readingLevel).toBe(DEFAULT_READING_LEVEL);
+    });
+
+    it('setReadingLevel est persisté (conservé entre deux visites)', () => {
+      useCosmosStore.getState().setReadingLevel('expert');
+      const raw = JSON.parse(window.localStorage.getItem(COSMOS_STORE_STORAGE_KEY) ?? '{}');
+      expect(raw.version).toBe(5);
+      expect(raw.state.readingLevel).toBe('expert');
+    });
+
+    it('réhydrate le niveau depuis un stockage v4 existant', async () => {
+      window.localStorage.setItem(COSMOS_STORE_STORAGE_KEY, JSON.stringify({ state: v4State, version: 4 }));
+      await useCosmosStore.persist.rehydrate();
+      expect(useCosmosStore.getState().readingLevel).toBe(DEFAULT_READING_LEVEL);
+      expect(useCosmosStore.getState().mysteries).toHaveLength(1);
+    });
+
+    it('réhydrate un niveau v5 sauvegardé', async () => {
+      window.localStorage.setItem(COSMOS_STORE_STORAGE_KEY, JSON.stringify({ state: { ...v4State, readingLevel: 'simple' }, version: 5 }));
+      await useCosmosStore.persist.rehydrate();
+      expect(useCosmosStore.getState().readingLevel).toBe('simple');
+    });
+
+    it('refuse une valeur invalide via setReadingLevel', () => {
+      useCosmosStore.getState().setReadingLevel('simple');
+      // @ts-expect-error — runtime guard against invalid values
+      useCosmosStore.getState().setReadingLevel('genius');
+      expect(useCosmosStore.getState().readingLevel).toBe('simple');
     });
   });
 

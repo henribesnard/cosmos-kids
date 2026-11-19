@@ -129,32 +129,146 @@ export function validateRequest(body: unknown): { ok: true; data: NovaRequest } 
 /*  Privacy detection & masking                                       */
 /* ------------------------------------------------------------------ */
 
-const PRIVACY_PATTERNS: readonly RegExp[] = [
-  // Full name patterns (first + last)
-  /\b(?:je m'appelle|mon nom est|my name is|i'm called|i am)\s+[A-ZÀ-Ü][a-zà-ü]+\s+[A-ZÀ-Ü][a-zà-ü]+/i,
-  // Address patterns (number + optional words + street type)
-  /\b\d{1,5}\s+\w*\s*(rue|avenue|boulevard|street|road|drive|impasse|chemin|place)\b/i,
-  /\b(j'habite|i live at|my address|mon adresse)\b/i,
-  /\b\d{5}\s+[A-ZÀ-Ü][a-zà-ü]+/,  // Postal code + city
-  // School name
-  /\b(mon école|my school|j'étudie à|i study at|mon collège|mon lycée)\b/i,
-  // Phone number (French and international formats)
-  /\b0[1-9][\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}\b/,
+/*
+ * Two levels:
+ * - 'personal': full name, address or place of residence, school, phone,
+ *   e-mail → Nova answers with the privacy reminder only (nothing is sent to
+ *   the model provider).
+ * - 'first-name': a first name alone ("je m'appelle Léo, pourquoi…") → the
+ *   name is masked before anything is sent to the provider, Nova answers the
+ *   question normally and adds a short reminder.
+ *
+ * Apostrophes: both ' and ’ are accepted everywhere.
+ */
+
+const APOS = "['’]";
+const NAME_WORD = "[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ-]*";
+
+/** Name introductions, FR and EN. The name follows the match. */
+const NAME_INTRO_RE = new RegExp(
+  '(?:' + [
+    `\\bje\\s+m${APOS}\\s*appelle`,
+    `\\bj${APOS}\\s*m${APOS}\\s*appelle`,
+    `\\bmon\\s+(?:nom|pr[ée]nom)\\s+(?:c${APOS}\\s*est|est)`,
+    `\\bmoi\\s*,?\\s+c${APOS}\\s*est`,
+    `\\bmy\\s+(?:first\\s+|full\\s+|last\\s+)?name\\s*(?:is|'s|’s)`,
+    `\\bi${APOS}m\\s+called`,
+    `\\bi\\s+am\\s+called`,
+    `\\bcall\\s+me`,
+    `\\bmes\\s+amis\\s+m${APOS}\\s*appellent`,
+  ].join('|') + `)\\s*:?\\s+(${NAME_WORD})(?:\\s+(${NAME_WORD}))?`,
+  'iu',
+);
+
+/**
+ * Words that can follow a first name without being a surname
+ * ("je m'appelle Léo et…", "my name is Sam and…").
+ */
+const NOT_A_SURNAME = new Set([
+  'et', 'je', 'j', 'jai', 'mais', 'donc', 'alors', 'pourquoi', 'comment', 'quand', 'quoi', 'combien',
+  'est', 'ce', 'c', 'qu', 'que', 'qui', 'où', 'ou', 'tu', 'il', 'elle', 'on', 'nous', 'vous', 'ils',
+  'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'à', 'a', 'au', 'aux', 'en', 'dans', 'sur', 'avec',
+  'pour', 'par', 'sans', 'moi', 'toi', 'ai', 'suis', 'veux', 'voudrais', 'aime', 'adore', 'dis', 'dis-moi',
+  'peux', 'peux-tu', 'sais', 'sais-tu', 'bonjour', 'salut', 'coucou', 'merci', 'svp', 'stp', 'oui', 'non',
+  'and', 'but', 'so', 'why', 'how', 'what', 'when', 'where', 'who', 'which', 'is', 'are', 'was', 'i', 'im',
+  'you', 'he', 'she', 'we', 'they', 'the', 'an', 'of', 'to', 'in', 'on', 'at', 'for', 'with', 'from',
+  'am', 'want', 'like', 'love', 'have', 'can', 'could', 'do', 'does', 'tell', 'please', 'hi', 'hello',
+  'thanks', 'yes', 'no', 'ans', 'years', 'year', 'old', 'aussi', 'too', 'also',
+]);
+
+/** Address / place of residence (but never "j'habite sur Terre"). */
+const RESIDENCE_PATTERNS: readonly RegExp[] = [
+  // FR: j'habite à / au / aux / en / dans + a place, près de, rue…, a number
+  new RegExp(`\\bj${APOS}\\s*habite\\s+(?:à|a|au|aux|en|près\\s+de|pres\\s+de|vers|rue|avenue|boulevard|chemin|impasse|place|\\d)`, 'iu'),
+  new RegExp(`\\bj${APOS}\\s*habite\\s+dans\\s+(?!l${APOS}\\s*espace|la\\s+galaxie|la\\s+voie\\s+lact|le\\s+syst[èe]me\\s+solaire|l${APOS}\\s*univers|une\\s+galaxie)`, 'iu'),
+  /\bje\s+vis\s+(?:à|a|au|aux|en)\s/iu,
+  /\b(?:mon|notre)\s+adresse\b/iu,
+  // EN: I live in / at / near (but not "on Earth", "on a planet")
+  /\bi\s+live\s+(?:in|at|near|next\s+to|close\s+to)\s+(?!space\b|the\s+milky\s+way|the\s+solar\s+system|a\s+galaxy|the\s+universe)/iu,
+  /\bi\s+live\s+on\s+(?!earth\b|planet\s+earth|the\s+earth|a\s+planet|this\s+planet|the\s+third\s+planet)\S/iu,
+  /\bmy\s+(?:home\s+)?address\b/iu,
+  // Street address (number + street type)
+  /\b\d{1,5}\s*(?:bis|ter)?,?\s+(?:rue|avenue|av\.|boulevard|bd|impasse|chemin|place|allée|allee|route|street|st\.|road|rd\.|drive|lane|avenue)\b/iu,
+  // Postal code + city (case-sensitive city initial)
+  /\b\d{5}\s+[A-ZÀ-Ü][a-zà-ü]+/u,
+];
+
+/** School and class, FR and EN. */
+const SCHOOL_PATTERNS: readonly RegExp[] = [
+  /\b(?:mon|ma)\s+(?:école|ecole|collège|college|lycée|lycee|maternelle|classe\s+(?:de|du|à|a|au))\b/iu,
+  /\bje\s+suis\s+(?:en|au)\s+(?:cp|ce1|ce2|cm1|cm2|6e|6ème|6eme|5e|5ème|5eme|4e|4ème|4eme|3e|3ème|3eme|sixième|cinquième|quatrième|troisième|seconde)\s+(?:à|a|au|aux|chez|dans)\s+\S/iu,
+  new RegExp(`\\bje\\s+vais\\s+à\\s+l${APOS}\\s*[ée]cole\\s+(?!demain|aujourd|ce\\s+matin|le\\s+matin)\\S`, 'iu'),
+  /\bj['’]\s*(?:étudie|etudie)\s+(?:à|a|au)\b/iu,
+  /\bmy\s+(?:school|class|teacher)\s+(?:is|'s|’s|called|named)\b/iu,
+  /\bmy\s+school\b/iu,
+  /\bi\s+(?:go\s+to|study\s+at|attend)\s+(?!school\b|bed\b|space\b|the\s+moon|mars)[A-Z]?\S*\s*(?:school|academy|elementary|primary|middle|high)\b/iu,
+  /\bi(?:'m|’m|\s+am)\s+in\s+(?:\d{1,2}(?:st|nd|rd|th)?\s+grade|grade\s+\d{1,2}|year\s+\d{1,2})\s+at\s+\S/iu,
+];
+
+/** Contact details. */
+const CONTACT_PATTERNS: readonly RegExp[] = [
+  /\b0[1-9](?:[\s.-]?\d{2}){4}\b/,
   /\+\d{1,3}[\s.-]?\d[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}/,
-  // Email
   /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/,
 ];
 
+export type PersonalInfoLevel = 'none' | 'first-name' | 'personal';
+
+export interface PersonalInfoAnalysis {
+  readonly level: PersonalInfoLevel;
+  /** Text safe to send to the provider (first name replaced by a placeholder). */
+  readonly masked: string;
+}
+
+export const FIRST_NAME_PLACEHOLDER = '[prénom]';
+
+function normalizeWord(word: string): string {
+  return word.toLowerCase().replace(/['’]/g, '');
+}
+
+export function analyzePersonalInfo(text: string): PersonalInfoAnalysis {
+  const all = [...RESIDENCE_PATTERNS, ...SCHOOL_PATTERNS, ...CONTACT_PATTERNS];
+  if (all.some((pattern) => pattern.test(text))) {
+    return { level: 'personal', masked: maskPersonalInfo(text) };
+  }
+
+  const nameMatch = NAME_INTRO_RE.exec(text);
+  if (nameMatch) {
+    const first = nameMatch[1] ?? '';
+    const second = nameMatch[2];
+    const firstIsWord = !NOT_A_SURNAME.has(normalizeWord(first));
+    if (!firstIsWord) return { level: 'none', masked: text };
+    if (second && !NOT_A_SURNAME.has(normalizeWord(second))) {
+      return { level: 'personal', masked: maskPersonalInfo(text) };
+    }
+    return { level: 'first-name', masked: maskFirstName(text) };
+  }
+
+  return { level: 'none', masked: text };
+}
+
 export function containsPersonalInfo(text: string): boolean {
-  return PRIVACY_PATTERNS.some((pattern) => pattern.test(text));
+  return analyzePersonalInfo(text).level !== 'none';
+}
+
+/** Replace every introduced first name by a neutral placeholder. */
+export function maskFirstName(text: string): string {
+  const global = new RegExp(NAME_INTRO_RE.source, 'giu');
+  return text.replace(global, (match: string, first: string) => {
+    if (NOT_A_SURNAME.has(normalizeWord(first))) return match;
+    const idx = match.lastIndexOf(first);
+    return match.slice(0, idx) + FIRST_NAME_PLACEHOLDER + match.slice(idx + first.length);
+  });
 }
 
 export function maskPersonalInfo(text: string): string {
-  let masked = text;
-  for (const pattern of PRIVACY_PATTERNS) {
-    masked = masked.replace(pattern, '[MASQUÉ]');
+  let masked = maskFirstName(text);
+  for (const pattern of [...RESIDENCE_PATTERNS, ...SCHOOL_PATTERNS, ...CONTACT_PATTERNS]) {
+    masked = masked.replace(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g'), '[MASQUÉ]');
   }
-  return masked;
+  // A surname right after the placeholder is masked as well.
+  return masked.replace(new RegExp(`\\[prénom\\]\\s+(${NAME_WORD})`, 'gu'), (m, word: string) =>
+    NOT_A_SURNAME.has(normalizeWord(word)) ? m : '[MASQUÉ]');
 }
 
 /* ------------------------------------------------------------------ */

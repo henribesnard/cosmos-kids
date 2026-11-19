@@ -13,7 +13,7 @@
  * 9. openQuestion overrides status to never be 'verified'
  */
 import { describe, expect, it } from 'vitest';
-import { SourceRegistry } from './handler';
+import { SourceRegistry, applyVerdicts, sanitizeGuessChoices } from './handler';
 import { getVerificationPrompt, getSystemPrompt, getClassificationPrompt, getTextAssemblyPrompt } from './prompts';
 import type { CatalogEntry } from './catalogSearch';
 
@@ -321,62 +321,7 @@ describe('refusal responses have no status field', () => {
 /*  Verification verdicts logic (with supportingSourceIds)              */
 /* ------------------------------------------------------------------ */
 
-describe('verification verdict application', () => {
-  type ClaimStatus = 'verified' | 'debated' | 'unknown';
-
-  interface VerdictInput {
-    claimIndex: number;
-    verdict: 'supported' | 'unsupported' | 'debated';
-    supportingSourceIds?: string[];
-  }
-
-  function applyVerdicts(
-    draftClaims: Array<{ text: string; sourceIds: string[] }>,
-    verdicts: VerdictInput[],
-    registry: SourceRegistry,
-    openQuestion = false,
-  ): { claims: Array<{ text: string; status: ClaimStatus; sourceIds: string[] }>; worstStatus: ClaimStatus } {
-    const verifiedClaims: Array<{ text: string; status: ClaimStatus; sourceIds: string[] }> = [];
-    let worstStatus: ClaimStatus = 'verified';
-
-    for (let i = 0; i < draftClaims.length; i++) {
-      const claim = draftClaims[i]!;
-      const verdict = verdicts.find((v) => v.claimIndex === i);
-
-      if (!verdict || verdict.verdict === 'unsupported') {
-        continue;
-      }
-
-      const status: ClaimStatus =
-        verdict.verdict === 'debated' ? 'debated' :
-        verdict.verdict === 'supported' ? 'verified' :
-        'unknown';
-
-      // Merge source attribution: draft sourceIds + verifier supportingSourceIds
-      // NO FALLBACK to all sources
-      const draftIds = claim.sourceIds.filter((id) => registry.hasId(id));
-      const verifierIds = (verdict.supportingSourceIds ?? [])
-        .filter((id) => typeof id === 'string' && registry.hasId(id));
-      const finalIds = [...new Set([...draftIds, ...verifierIds])];
-
-      verifiedClaims.push({ text: claim.text, status, sourceIds: finalIds });
-
-      if (status === 'unknown') worstStatus = 'unknown';
-      else if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
-    }
-
-    if (verifiedClaims.length === 0 && draftClaims.length > 0) {
-      worstStatus = 'unknown';
-    }
-
-    // Open question override: status can never be 'verified'
-    if (openQuestion && worstStatus === 'verified') {
-      worstStatus = 'debated';
-    }
-
-    return { claims: verifiedClaims, worstStatus };
-  }
-
+describe('verification verdict application (applyVerdicts from handler)', () => {
   it('unsupported claim is removed from results', () => {
     const registry = new SourceRegistry();
     registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'Saturn has 146 moons');
@@ -453,8 +398,8 @@ describe('verification verdict application', () => {
 
     const { claims, worstStatus } = applyVerdicts(
       [
-        { text: 'Fact A', sourceIds: ['web-1'] },
-        { text: 'Fact B is debated', sourceIds: ['web-2'] },
+        { text: 'Fact A', sourceIds: ['web-0'] },
+        { text: 'Fact B is debated', sourceIds: ['web-1'] },
         { text: 'Fact C is false', sourceIds: [] },
       ],
       [
@@ -517,19 +462,50 @@ describe('verification verdict application', () => {
 
   /* ---- New: no source fallback tests ---- */
 
-  it('claim with no sourceIds and no supportingSourceIds has empty sources (no fallback)', () => {
+  it('claim with no sourceIds and no supportingSourceIds is dropped (no fallback, no "Vérifié" without source)', () => {
     const registry = new SourceRegistry();
     registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'some content');
 
-    const { claims } = applyVerdicts(
+    const { claims, worstStatus } = applyVerdicts(
       [{ text: 'A verified claim without sources', sourceIds: [] }],
       [{ claimIndex: 0, verdict: 'supported' }],
       registry,
     );
 
-    expect(claims).toHaveLength(1);
-    // No fallback: sourceIds should be empty, NOT all registry sources
-    expect(claims[0]!.sourceIds).toEqual([]);
+    // Lot 2: never keep a supported claim with an empty source list,
+    // and never fall back to all registry sources either.
+    expect(claims).toHaveLength(0);
+    expect(worstStatus).toBe('unknown');
+  });
+
+  it('lot 2 — a verified or debated claim always keeps at least one registry source', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'Saturn has rings');
+
+    const { claims, worstStatus } = applyVerdicts(
+      [
+        { text: 'Saturn has rings', sourceIds: ['web-0'] },
+        { text: 'Supported but only invented sources', sourceIds: ['web-99'] },
+        { text: 'Debated without any source', sourceIds: [] },
+        { text: 'Supported by verifier only', sourceIds: [] },
+      ],
+      [
+        { claimIndex: 0, verdict: 'supported' },
+        { claimIndex: 1, verdict: 'supported', supportingSourceIds: ['cat-invented'] },
+        { claimIndex: 2, verdict: 'debated' },
+        { claimIndex: 3, verdict: 'supported', supportingSourceIds: ['web-0'] },
+      ],
+      registry,
+    );
+
+    expect(claims.map((c) => c.text)).toEqual(['Saturn has rings', 'Supported by verifier only']);
+    for (const claim of claims) {
+      expect(['verified', 'debated']).toContain(claim.status);
+      expect(claim.sourceIds.length).toBeGreaterThan(0);
+      for (const id of claim.sourceIds) expect(registry.hasId(id)).toBe(true);
+    }
+    // The source-less debated claim did not drag the status to 'debated'
+    expect(worstStatus).toBe('verified');
   });
 
   /* ---- New: openQuestion tests ---- */
@@ -585,5 +561,47 @@ describe('no sources → unknown', () => {
   it('empty registry means no drafting should happen', () => {
     const registry = new SourceRegistry();
     expect(registry.isEmpty()).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Lot 2 — guess choices are hypotheses, sanitized, never facts       */
+/* ------------------------------------------------------------------ */
+
+describe('sanitizeGuessChoices', () => {
+  it('keeps 2–3 short distinct plain-text strings', () => {
+    expect(sanitizeGuessChoices(['Plus de 100', '*Une dizaine*', 'Plus de 100', 'Deux', 'Trois'])).toEqual(['Plus de 100', 'Une dizaine', 'Deux']);
+  });
+
+  it('returns [] when fewer than 2 valid choices remain', () => {
+    expect(sanitizeGuessChoices(['Seule'])).toEqual([]);
+    expect(sanitizeGuessChoices(['x'.repeat(80), 42, null, ''])).toEqual([]);
+    expect(sanitizeGuessChoices('pas un tableau')).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Lot 2 — verification prompt: "debated" is a real scientific debate */
+/* ------------------------------------------------------------------ */
+
+describe('verification prompt — debated misuse (ISS, 19 Nov test)', () => {
+  it.each(['fr', 'en'] as const)('%s prompt: rounding, natural variation and planned dates are not debates', (locale) => {
+    const prompt = getVerificationPrompt(locale);
+    expect(prompt).toMatch(locale === 'fr' ? /UNIQUEMENT un vrai débat scientifique/ : /ONLY a genuine scientific debate/);
+    expect(prompt).toMatch(locale === 'fr' ? /arrondies ou converties/ : /rounded or converted/);
+    expect(prompt).toMatch(locale === 'fr' ? /date ou un événement futur prévu/ : /planned or scheduled future date/);
+    expect(prompt).toMatch(locale === 'fr' ? /ne parle simplement pas/ : /simply does not mention/);
+  });
+
+  it.each(['fr', 'en'] as const)('%s assembly prompt requires plain text (no asterisks)', (locale) => {
+    const prompt = getTextAssemblyPrompt(locale);
+    expect(prompt).toMatch(locale === 'fr' ? /TEXTE BRUT/ : /PLAIN TEXT/);
+    expect(prompt).toContain('*');
+  });
+
+  it.each(['fr', 'en'] as const)('%s draft prompt documents guessChoices as hypotheses', (locale) => {
+    const prompt = getSystemPrompt(locale);
+    expect(prompt).toContain('guessChoices');
+    expect(prompt).toMatch(locale === 'fr' ? /pas des faits/ : /not facts/);
   });
 });

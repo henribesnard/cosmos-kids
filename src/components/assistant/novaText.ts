@@ -1,6 +1,20 @@
 import type { ClaimStatus, ReadingLevel } from '../../assistant/types';
 import type { Locale } from '../../data/types';
 
+/** "42 s", "12 min 05 s", "1 h 02 min" — same shape in FR and EN. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds));
+  if (s < 60) return `${s}\u00a0s`;
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    return `${m}\u00a0min\u00a0${String(s % 60).padStart(2, '0')}\u00a0s`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}\u00a0h\u00a0${String(m).padStart(2, '0')}\u00a0min`;
+}
+
+
 /** Phases that make up the visible "verification journey". */
 export type JourneyPhase = 'checking' | 'searching-catalog' | 'searching-web' | 'verifying';
 export const JOURNEY_PHASES: readonly JourneyPhase[] = ['checking', 'searching-catalog', 'searching-web', 'verifying'];
@@ -69,6 +83,12 @@ export interface NovaCopy {
   readonly retry: string;
   readonly offlineBanner: string;
   readonly rechargeCountdown: (s: number) => string;
+  readonly rechargeDone: string;
+  readonly expand: Readonly<{ compact: string; wide: string; full: string; sheetExpand: string; sheetCollapse: string }>;
+  readonly guessChooseLabel: string;
+  readonly guessOrChoose: string;
+  readonly guessChoicesHint: string;
+  readonly privacyNoteLabel: string;
   readonly newMessage: string;
   readonly askedAbout: string;
 }
@@ -158,7 +178,19 @@ const fr: NovaCopy = {
   safetyAdults: 'Un parent, un·e enseignant·e ou un adulte que tu connais bien peut t’écouter.',
   retry: 'Réessayer',
   offlineBanner: 'Pas de connexion\u00a0: je t’attends ici dès que le signal revient.',
-  rechargeCountdown: (s) => `Recharge… ${s} s`,
+  rechargeCountdown: (s) => `Nova recharge ses panneaux solaires… encore ${formatDuration(s)}`,
+  rechargeDone: 'Panneaux solaires rechargés\u00a0: tu peux reposer une question\u00a0!',
+  expand: {
+    compact: 'Agrandir Nova',
+    wide: 'Passer Nova en plein écran',
+    full: 'Réduire Nova',
+    sheetExpand: 'Agrandir Nova en plein écran',
+    sheetCollapse: 'Réduire Nova',
+  },
+  guessChooseLabel: 'Choisis ton hypothèse',
+  guessOrChoose: 'Ou choisis une idée\u00a0:',
+  guessChoicesHint: 'Ce sont des idées, pas encore des réponses. La réponse vérifiée vient juste après.',
+  privacyNoteLabel: 'Rappel de sécurité',
   newMessage: 'Nova a répondu',
   askedAbout: 'Ta question',
 };
@@ -248,7 +280,19 @@ const en: NovaCopy = {
   safetyAdults: 'A parent, a teacher or a grown-up you know well can listen to you.',
   retry: 'Try again',
   offlineBanner: 'No connection: I’ll wait right here until the signal comes back.',
-  rechargeCountdown: (s) => `Recharging… ${s}s`,
+  rechargeCountdown: (s) => `Nova is recharging her solar panels… ${formatDuration(s)} left`,
+  rechargeDone: 'Solar panels recharged: you can ask again!',
+  expand: {
+    compact: 'Enlarge Nova',
+    wide: 'Make Nova full screen',
+    full: 'Shrink Nova',
+    sheetExpand: 'Expand Nova to full screen',
+    sheetCollapse: 'Shrink Nova',
+  },
+  guessChooseLabel: 'Pick your guess',
+  guessOrChoose: 'Or pick an idea:',
+  guessChoicesHint: 'These are ideas, not answers yet. The checked answer comes right after.',
+  privacyNoteLabel: 'Safety reminder',
   newMessage: 'Nova answered',
   askedAbout: 'Your question',
 };

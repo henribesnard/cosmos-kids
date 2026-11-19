@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useAssistant } from '../../assistant/useAssistant';
 import type { AssistantMessage, AssistantPhase, ReadingLevel } from '../../assistant/types';
 import type { Locale } from '../../data/types';
@@ -7,9 +7,9 @@ import { useCosmosStore } from '../../store/useCosmosStore';
 import '../../styles/assistant.css';
 import { NovaAvatar, type NovaMood } from './NovaAvatar';
 import { ChildMessage, NovaMessage, type GuessState } from './NovaMessage';
-import { NOVA_SHEET_QUERY, useFocusTrap, useMediaQuery, useOnline, useSpeech } from './novaHooks';
+import { NOVA_SHEET_QUERY, useFocusTrap, useMediaQuery, useNovaSize, useSpeech, type NovaSize } from './novaHooks';
 import { NOVA_TEXT } from './novaText';
-import { isJourneyPhase, moodForMessage, moodForPhase, questionFor, RECHARGE_MS, specialCaseOf } from './novaUtils';
+import { isJourneyPhase, moodForMessage, moodForPhase, questionFor, rechargeLeftSeconds, specialCaseOf } from './novaUtils';
 import { VerificationJourney } from './VerificationJourney';
 
 export interface NovaPanelProps {
@@ -37,13 +37,25 @@ function lastNovaMessage(messages: readonly AssistantMessage[]): AssistantMessag
  * mounted (hidden) so the conversation survives closing and re-opening.
  * Desktop: non-modal side panel (complementary). Tablet/mobile: modal bottom
  * sheet (dialog) with a focus trap.
+ *
+ * Lot 2 — size: compact (default) → wide (≈60 % of the window, max 880 px,
+ * scene still visible) → full screen (whole window, blurred scene, centred
+ * reading column, larger text, modal with a focus trap, Escape goes back to
+ * the previous size and focus returns to the button). On sheets the same
+ * button (or the handle) raises the sheet to full height. Remembered for the
+ * session.
  */
 export default function NovaPanel({ locale, open, reducedMotion, onClose, canTravel, onTravel, onOpenParents }: NovaPanelProps) {
   const assistant = useAssistant();
   const { messages, phase, suggestions, remainingQuestions, readingLevel } = assistant;
   const t = NOVA_TEXT[locale];
   const isSheet = useMediaQuery(NOVA_SHEET_QUERY);
-  const online = useOnline();
+  const { size: storedSize, previous: previousSize, setSize } = useNovaSize();
+  // Sheets only know "compact" (bottom sheet) and "full" (100dvh).
+  const size: NovaSize = isSheet && storedSize === 'wide' ? 'compact' : storedSize;
+  const isFull = size === 'full';
+  const isModal = isSheet || isFull;
+  const offline = phase === 'offline';
   const speech = useSpeech(locale);
   const selectedObjectId = useCosmosStore((state) => state.selectedObjectId);
 
@@ -52,6 +64,9 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
   const rootRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const handleDragRef = useRef<{ y: number } | null>(null);
+  const wasFullRef = useRef(isFull);
   const logRef = useRef<HTMLOListElement>(null);
   const reducedMotionRef = useRef(reducedMotion);
   const lastMessageId = messages[messages.length - 1]?.id;
@@ -72,12 +87,22 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
   }
 
   const busy = isJourneyPhase(phase);
-  const lastSpecial = lastNova ? specialCaseOf(lastNova, arrivals[lastNova.id] ?? phase, online) : null;
-  const recharging = lastSpecial === 'rate-limited' && lastNova !== undefined && now < lastNova.createdAt + RECHARGE_MS;
+  const lastSpecial = lastNova ? specialCaseOf(lastNova, arrivals[lastNova.id] ?? phase) : null;
+  const rechargeLeft = lastSpecial === 'rate-limited' && lastNova ? rechargeLeftSeconds(lastNova, now) : 0;
+  const recharging = rechargeLeft > 0;
   const lastGated = lastNova?.guessFirst === true && !lastSpecial && !(guesses[lastNova.id]?.revealed ?? false);
-  const canSend = !busy && !recharging && online && remainingQuestions !== 0;
+  // The server decides when the reserve is empty (429 with the real delay):
+  // the interface only waits for the countdown and for the connection.
+  const canSend = !busy && !recharging && !offline;
+  const lastRevealed = lastNova ? (guesses[lastNova.id]?.revealed ?? false) : false;
 
-  useFocusTrap(rootRef, open && isSheet);
+  useFocusTrap(rootRef, open && isModal);
+
+  // Leaving full screen gives the focus back to the "Agrandir" button.
+  useEffect(() => {
+    if (wasFullRef.current && !isFull && open) expandRef.current?.focus();
+    wasFullRef.current = isFull;
+  }, [isFull, open]);
 
   // Tick the clock while the solar panels recharge.
   useEffect(() => {
@@ -100,7 +125,9 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
     if (!open) stopSpeech();
   }, [open, stopSpeech]);
 
-  // Keep each arriving message at the top of the conversation list.
+  // Bring each arriving message — and a newly revealed answer — to the top of
+  // the conversation list, so the child reads it from its FIRST line instead
+  // of landing at the bottom of a long answer.
   useEffect(() => {
     const log = logRef.current;
     const last = log?.lastElementChild as HTMLElement | null | undefined;
@@ -112,11 +139,13 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
       top: Math.max(0, log.scrollTop + lastTop - logTop),
       behavior: reducedMotionRef.current ? 'auto' : 'smooth',
     });
-  }, [lastMessageId]);
+  }, [lastMessageId, lastRevealed]);
 
-  const send = (text: string) => {
+  const send = (text: string, retry = false) => {
     const question = text.trim();
-    if (!question || !canSend) return;
+    // "Réessayer" after a network failure is the way out of 'offline'.
+    const allowed = canSend || (retry && offline && !busy);
+    if (!question || !allowed) return;
     publish({ type: 'ASSISTANT_QUESTION_ASKED', topicId: selectedObjectId });
     setDraft('');
     void assistant.ask(question);
@@ -137,8 +166,34 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
   const onRootKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.stopPropagation();
+      if (isFull) {
+        // Back to the previous size, not closed.
+        setSize(isSheet || previousSize === 'full' ? 'compact' : previousSize);
+        return;
+      }
       onClose();
     }
+  };
+
+  const nextSize: NovaSize = isSheet
+    ? (isFull ? 'compact' : 'full')
+    : size === 'compact' ? 'wide' : size === 'wide' ? 'full' : 'compact';
+  const expandLabel = isSheet
+    ? (isFull ? t.expand.sheetCollapse : t.expand.sheetExpand)
+    : t.expand[size];
+  const cycleSize = () => setSize(nextSize);
+
+  const onHandlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    handleDragRef.current = { y: event.clientY };
+  };
+  const onHandlePointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    const start = handleDragRef.current;
+    handleDragRef.current = null;
+    if (!start) return;
+    const dy = event.clientY - start.y;
+    if (dy < -40) setSize('full');
+    else if (dy > 40) setSize('compact');
+    else setSize(isFull ? 'compact' : 'full');
   };
 
   const travel = (destinationId: string) => {
@@ -156,7 +211,7 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
   };
 
   const headerMood: NovaMood = (busy ? moodForPhase(phase) : null)
-    ?? (!online ? 'offline' : null)
+    ?? (offline ? 'offline' : null)
     ?? (inputFocused && draft ? 'listening' : null)
     ?? (lastNova ? moodForMessage(lastNova, lastSpecial) : 'idle');
 
@@ -174,18 +229,28 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
 
   return (
     <>
-      {isSheet && open && <div className="nova-scrim" aria-hidden="true" onClick={onClose} />}
+      {isSheet && open && !isFull && <div className="nova-scrim" aria-hidden="true" onClick={onClose} />}
+      {isFull && open && <div className="nova-veil" aria-hidden="true" />}
       <section
         ref={rootRef}
-        className={`nova-panel glass-panel ${isSheet ? 'nova-panel--sheet' : 'nova-panel--side'}`}
+        className={`nova-panel glass-panel ${isSheet ? 'nova-panel--sheet' : 'nova-panel--side'} nova-panel--${size}`}
         hidden={!open}
-        role={isSheet ? 'dialog' : 'complementary'}
-        aria-modal={isSheet ? true : undefined}
+        role={isModal ? 'dialog' : 'complementary'}
+        aria-modal={isModal ? true : undefined}
+        data-nova-size={size}
         aria-labelledby={titleId}
         data-scene-obstacle
         onKeyDown={onRootKeyDown}
       >
-        {isSheet && <span className="nova-panel__handle" aria-hidden="true" />}
+        {isSheet && (
+          <span
+            className="nova-panel__handle"
+            aria-hidden="true"
+            onPointerDown={onHandlePointerDown}
+            onPointerUp={onHandlePointerUp}
+            onPointerCancel={() => { handleDragRef.current = null; }}
+          />
+        )}
         <header className="nova-panel__header">
           <NovaAvatar mood={headerMood} size={52} className="nova-panel__avatar" />
           <div className="nova-panel__heading">
@@ -197,6 +262,22 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
           )}
+          <button
+            ref={expandRef}
+            type="button"
+            className="icon-button nova-icon-btn nova-expand-btn"
+            onClick={cycleSize}
+            aria-expanded={size !== 'compact'}
+            aria-label={expandLabel}
+            title={expandLabel}
+            data-next-size={nextSize}
+          >
+            {isFull ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            )}
+          </button>
           <button type="button" className="icon-button nova-icon-btn" onClick={onClose} aria-label={t.close} title={t.close}>
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
           </button>
@@ -229,7 +310,7 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
             {messages.map((message, index) => {
               if (message.role === 'child') return <ChildMessage key={message.id} message={message} locale={locale} />;
               const arrival = arrivals[message.id] ?? (message === lastNova ? phase : undefined);
-              const special = specialCaseOf(message, arrival, online);
+              const special = specialCaseOf(message, arrival);
               const question = questionFor(messages, index);
               const isLast = message === lastNova;
               return (
@@ -238,6 +319,7 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
                   message={message}
                   question={question}
                   locale={locale}
+                  readingLevel={readingLevel}
                   special={special}
                   arrivalPhase={arrival}
                   guess={guesses[message.id] ?? NOT_REVEALED}
@@ -247,7 +329,7 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
                   canTravel={canTravel}
                   onTravel={travel}
                   onReveal={(guess) => setGuesses((current) => ({ ...current, [message.id]: { revealed: true, guess } }))}
-                  onRetry={isLast && (special === 'error' || special === 'offline') && question ? () => send(question) : null}
+                  onRetry={isLast && (special === 'error' || special === 'offline') && question ? () => send(question, true) : null}
                 />
               );
             })}
@@ -270,7 +352,7 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
         </div>
 
         <footer className="nova-panel__footer">
-          {!online && (
+          {offline && (
             <p className="nova-offline" role="status">
               <NovaAvatar mood="offline" size={28} />
               {t.offlineBanner}
@@ -303,8 +385,8 @@ export default function NovaPanel({ locale, open, reducedMotion, onClose, canTra
                 className={`nova-remaining${remainingQuestions <= 3 || recharging ? ' nova-remaining--low' : ''}`}
               >
                 <span aria-hidden="true">{recharging ? '☀' : '⚡'}</span>{' '}
-                {recharging && lastNova
-                  ? t.rechargeCountdown(Math.min(RECHARGE_MS / 1000, Math.max(1, Math.ceil((lastNova.createdAt + RECHARGE_MS - now) / 1000))))
+                {recharging
+                  ? t.rechargeCountdown(rechargeLeft)
                   : remainingQuestions > 0 ? t.remaining(remainingQuestions) : t.remainingNone}
               </span>
             )}

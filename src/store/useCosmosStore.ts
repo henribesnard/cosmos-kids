@@ -12,6 +12,7 @@ import {
   type JourneyId,
   type MissionStepTarget,
 } from '../data/journeyTypes';
+import type { ReadingLevel } from '../assistant/types';
 import { publish } from '../domain/events';
 
 export type { CelestialObjectId, CosmicObjectId, DeepSkyObjectId, Locale } from '../data';
@@ -85,6 +86,8 @@ export interface CosmosState {
   readonly mission: MissionState;
   readonly travel: TravelState;
   readonly mysteries: readonly Mystery[];
+  /** Reading level shared by Nova and the InfoPanel (persisted since v5). */
+  readonly readingLevel: ReadingLevel;
 }
 
 export interface CosmosActions {
@@ -124,6 +127,7 @@ export interface CosmosActions {
   cancelTravel: () => void;
   addMystery: (question: string, locale: Locale) => void;
   removeMystery: (id: string) => void;
+  setReadingLevel: (level: ReadingLevel) => void;
   reset: () => void;
 }
 
@@ -135,6 +139,13 @@ const IDLE_TRAVEL: TravelState = {
   destinationId: null,
   progress: 0,
 };
+
+export const DEFAULT_READING_LEVEL: ReadingLevel = 'curious';
+export const COSMOS_STORE_VERSION = 5;
+
+export function isReadingLevel(value: unknown): value is ReadingLevel {
+  return value === 'simple' || value === 'curious' || value === 'expert';
+}
 
 function systemPrefersReducedMotion(): boolean {
   return (
@@ -169,6 +180,7 @@ function createInitialState(): CosmosState {
     },
     travel: { ...IDLE_TRAVEL },
     mysteries: [],
+    readingLevel: DEFAULT_READING_LEVEL,
   };
 }
 
@@ -193,6 +205,7 @@ type PersistedCosmosState = Pick<
   | 'snapshotDate'
   | 'mission'
   | 'mysteries'
+  | 'readingLevel'
 >;
 
 const fallbackStorage: StateStorage = {
@@ -273,7 +286,7 @@ function safeMysteries(value: unknown): Mystery[] {
   );
 }
 
-/** Defensive v1/v2/v3 → v4 migration, exported so corrupted shapes are testable. */
+/** Defensive v1/v2/v3/v4 → v5 migration, exported so corrupted shapes are testable. */
 export function migratePersistedState(persisted: unknown, version: number): PersistedCosmosState {
   const initial = createInitialState();
   if (!isRecord(persisted)) {
@@ -286,6 +299,7 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
       snapshotDate: initial.snapshotDate,
       mission: initial.mission,
       mysteries: [],
+      readingLevel: DEFAULT_READING_LEVEL,
     };
   }
 
@@ -333,6 +347,10 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
 
   // v3→v4: add mysteries (empty array for pre-v4 stores)
   const mysteries = version >= 4 ? safeMysteries(persisted.mysteries) : [];
+  // v4→v5: shared reading level (default for pre-v5 stores or invalid values)
+  const readingLevel = version >= 5 && isReadingLevel(persisted.readingLevel)
+    ? persisted.readingLevel
+    : DEFAULT_READING_LEVEL;
 
   return {
     view,
@@ -351,6 +369,7 @@ export function migratePersistedState(persisted: unknown, version: number): Pers
       runs,
     },
     mysteries,
+    readingLevel,
   };
 }
 
@@ -548,11 +567,14 @@ export const useCosmosStore = create<CosmosStore>()(
         set((state) => ({
           mysteries: state.mysteries.filter((m) => m.id !== id),
         })),
+      setReadingLevel: (readingLevel) => {
+        if (isReadingLevel(readingLevel)) set({ readingLevel });
+      },
       reset: () => set(createInitialState()),
     }),
     {
       name: COSMOS_STORE_STORAGE_KEY,
-      version: 4,
+      version: COSMOS_STORE_VERSION,
       storage,
       partialize: (state) => ({
         view: state.view,
@@ -563,11 +585,12 @@ export const useCosmosStore = create<CosmosStore>()(
         snapshotDate: state.snapshotDate,
         mission: state.mission,
         mysteries: state.mysteries,
+        readingLevel: state.readingLevel,
       }),
       migrate: migratePersistedState,
       merge: (persisted, current) => ({
         ...current,
-        ...migratePersistedState(persisted, 4),
+        ...migratePersistedState(persisted, COSMOS_STORE_VERSION),
       }),
     },
   ),

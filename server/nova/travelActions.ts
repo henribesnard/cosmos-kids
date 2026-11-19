@@ -6,10 +6,15 @@
  *
  * 1. From the catalog sources actually cited by the retained claims
  *    (a `cat-mars` source maps to the object `mars`).
- * 2. From object names present in the question or the retained claims,
- *    in FR and EN, with variants — all derived from the catalogs in
- *    src/data (names, distinctive name words, entry ids), never from a
- *    hand-written duplicate list.
+ * 2. From object names present in the QUESTION, in FR and EN, with
+ *    variants — all derived from the catalogs in src/data (full names,
+ *    entry ids, distinctive proper-noun words), never from a hand-written
+ *    duplicate list.
+ *
+ * Lot 2 rule (false positives such as ISS → lmc): an object is proposed only
+ * if it is named in the question or if it is the catalog source of a retained
+ * claim. Names appearing in the claim text alone are not enough, and
+ * everyday words ("large", "grand", "cloud", "station"…) are never aliases.
  *
  * Every candidate id goes through isValidTravelDestination. Max 2 actions,
  * ordered by relevance (main object of the question first), no duplicates.
@@ -54,6 +59,24 @@ function indexOfAlias(paddedNorm: string, alias: string): number {
   return paddedNorm.indexOf(' ' + alias + ' ');
 }
 
+/**
+ * Everyday FR/EN words that appear in some object names but must never
+ * identify an object on their own ("a large spacecraft", "une grande
+ * étoile", "a cloud of gas"…). Normalized (lowercase, no diacritics).
+ */
+export const COMMON_WORDS: ReadonlySet<string> = new Set([
+  // size / shape
+  'grand', 'grande', 'grands', 'grandes', 'large', 'petit', 'petite', 'small', 'great', 'giant', 'geant',
+  // generic astronomy words
+  'nuage', 'nuages', 'cloud', 'clouds', 'nebuleuse', 'nebula', 'galaxie', 'galaxy', 'etoile', 'etoiles',
+  'star', 'stars', 'amas', 'cluster', 'planete', 'planet', 'station', 'stations', 'spatiale', 'spatial',
+  'space', 'internationale', 'international', 'magellanic',
+  // everyday nouns found in nebula names
+  'aigle', 'eagle', 'crabe', 'anneau', 'cheval', 'chevaux', 'horse', 'triangle', 'omega', 'carene',
+  // articles that might slip through
+  'les', 'the',
+]);
+
 let indexPromise: Promise<DestinationIndex> | null = null;
 
 async function buildIndex(): Promise<DestinationIndex> {
@@ -70,7 +93,7 @@ async function buildIndex(): Promise<DestinationIndex> {
     const words = new Set<string>();
     for (const name of [entry.name.fr, entry.name.en]) {
       for (const word of normalizeText(name).split(' ')) {
-        if (word.length >= 5) {
+        if (word.length >= 5 && !COMMON_WORDS.has(word)) {
           words.add(word);
           wordCount.set(word, (wordCount.get(word) ?? 0) + 1);
         }
@@ -89,7 +112,8 @@ async function buildIndex(): Promise<DestinationIndex> {
     // The entry id (normalized) covers short forms: "iss" matches "l'ISS",
     // "sgr a" matches "Sgr A*", "orion nebula" matches the id form.
     if (idNorm.length >= 3) aliases.add(idNorm);
-    // Distinctive name words (unique to this destination)
+    // Distinctive proper-noun words (unique to this destination, never an
+    // everyday word — see COMMON_WORDS)
     for (const word of words) {
       if ((wordCount.get(word) ?? 0) === 1) aliases.add(word);
     }
@@ -136,8 +160,28 @@ export interface ComputeTravelActionsOptions {
  * Compute up to 2 travel actions for a Nova answer.
  *
  * Order: objects named in the question (by position), then catalog sources
- * cited by the retained claims, then objects named in the retained claims.
+ * cited by the retained claims. Nothing else qualifies.
  */
+/**
+ * Destinations a travel action may point to for this answer: named in the
+ * question, or catalog source of a retained claim. Used to filter actions
+ * proposed by the model as well.
+ */
+export async function allowedTravelDestinations(
+  question: string,
+  retainedClaims: readonly RetainedClaim[],
+  options: ComputeTravelActionsOptions = {},
+): Promise<Set<string>> {
+  const index = await getIndex();
+  const allowed = new Set(matchDestinations(question, index).map((m) => m.destinationId));
+  if (!options.onlyIfInQuestion) {
+    for (const id of retainedClaims.flatMap((c) => c.sourceIds)) {
+      if (id.startsWith('cat-')) allowed.add(id.slice('cat-'.length));
+    }
+  }
+  return allowed;
+}
+
 export async function computeTravelActions(
   question: string,
   retainedClaims: readonly RetainedClaim[],
@@ -147,8 +191,6 @@ export async function computeTravelActions(
   const index = await getIndex();
 
   const questionMatches = matchDestinations(question, index);
-  const claimsText = retainedClaims.map((c) => c.text).join(' ');
-  const claimMatches = options.onlyIfInQuestion ? [] : matchDestinations(claimsText, index);
 
   const citedIds = options.onlyIfInQuestion
     ? []
@@ -167,7 +209,6 @@ export async function computeTravelActions(
 
   for (const m of questionMatches) push(m.destinationId);
   for (const id of citedIds) push(id);
-  for (const m of claimMatches) push(m.destinationId);
 
   return ordered.slice(0, 2).map((id) => {
     const dest = index.byId.get(id)!;

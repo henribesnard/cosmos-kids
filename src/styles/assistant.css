@@ -355,11 +355,79 @@
 @keyframes nova-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(99, 230, 255, .5); } 50% { box-shadow: 0 0 0 8px rgba(99, 230, 255, 0); } }
 @keyframes nova-shoot { 0% { opacity: 0; transform: translate(-14px, -10px) scale(.6); } 20% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 1; transform: translate(0, 0) scale(1); } }
 
+/* ---------- Lot 2: guess choices, privacy note, recharge ---------- */
+.nova-guess__choices { display: grid; gap: 10px; margin-top: 12px; }
+.nova-guess__choice {
+  background: rgba(166, 123, 255, .18);
+  border: 2px solid rgba(205, 184, 255, .55);
+  border-radius: 16px;
+  color: var(--nova-ink);
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  min-height: 60px;
+  padding: 10px 16px;
+  text-align: left;
+  transition: background .18s ease, border-color .18s ease;
+}
+.nova-guess__choice:hover { background: rgba(166, 123, 255, .3); border-color: var(--nova-violet-ink); }
+.nova-guess__choice:focus-visible { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.nova-guess__hint { color: var(--nova-muted); font-size: 14px; line-height: 1.45; margin: 10px 0 0; }
+.nova-guess__mini { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.nova-guess__mini-label { color: var(--nova-muted); font-size: 14px; margin-right: 2px; }
+.nova-privacy-note { background: rgba(103, 231, 189, .08); border-left: 3px solid var(--success); border-radius: 0 10px 10px 0; color: #d9fff1; font-size: 15px; line-height: 1.45; margin: 0 0 10px; padding: 6px 10px; }
+.nova-recharge--done { color: #d9fff1; font-size: 15px; margin: 10px 0 0; }
+
+/* ---------- Lot 2: sizes (compact / wide / full) ---------- */
+.nova-panel { transition: width .28s ease, height .28s ease, inset .28s ease, border-radius .28s ease; }
+.nova-panel--side.nova-panel--wide { width: min(60vw, 880px); }
+
+.nova-veil {
+  animation: nova-fade .25s ease both;
+  backdrop-filter: blur(14px) saturate(.8);
+  -webkit-backdrop-filter: blur(14px) saturate(.8);
+  background: rgba(1, 4, 12, .55);
+  inset: 0;
+  position: fixed;
+  z-index: 72;
+}
+.nova-panel.nova-panel--full {
+  --nova-body: 20px;
+  animation: nova-fade .25s ease both; /* the sheet keyframes would re-apply translateX(-50%) */
+  border-radius: 0;
+  bottom: 0;
+  height: 100dvh;
+  inset: 0;
+  left: 0;
+  max-height: none;
+  padding: 18px max(18px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  position: fixed;
+  right: 0;
+  top: 0;
+  transform: none;
+  width: 100%;
+  z-index: 73;
+}
+/* Centred reading column, about 70 characters wide. */
+.nova-panel--full > .nova-panel__header,
+.nova-panel--full > .nova-levels,
+.nova-panel--full > .nova-panel__scroll,
+.nova-panel--full > .nova-panel__footer { align-self: center; max-width: 70ch; width: 100%; }
+.nova-panel--full .nova-bubble__text { font-size: var(--nova-body); line-height: 1.65; }
+.nova-panel--full .nova-panel__heading h2 { font-size: 26px; }
+.nova-panel--full .nova-seal__explain, .nova-panel--full .nova-seal__claims li { font-size: 17px; }
+
+/* Sheets (tablet/mobile): the handle or the button raises the sheet to full height. */
+.nova-panel--sheet .nova-panel__handle { cursor: grab; height: 6px; margin-bottom: 10px; padding: 0; position: relative; touch-action: none; width: 52px; }
+.nova-panel--sheet .nova-panel__handle::before { content: ''; inset: -14px -24px; position: absolute; }
+.nova-panel--sheet.nova-panel--full { border-radius: 0; height: 100dvh; left: 0; transform: none; width: 100%; }
+
 @media (prefers-reduced-motion: reduce) {
-  .nova-panel, .nova-scrim, .nova-msg, .nova-journey *, .nova-recharge__bar::after, .nova-seal__chevron, .nova-btn { animation: none !important; transition: none !important; }
+  .nova-panel, .nova-scrim, .nova-veil, .nova-msg, .nova-journey *, .nova-recharge__bar::after, .nova-seal__chevron, .nova-btn, .nova-guess__choice { animation: none !important; transition: none !important; }
 }
 
 @media (forced-colors: active) {
-  .nova-bubble, .nova-seal__badge, .nova-chip, .nova-journey, .nova-guess { border: 1px solid CanvasText; }
+  .nova-bubble, .nova-seal__badge, .nova-chip, .nova-journey, .nova-guess, .nova-guess__choice { border: 1px solid CanvasText; }
   .nova-journey__track::after { background: Highlight; }
 }

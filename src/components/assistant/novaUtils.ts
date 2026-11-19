@@ -16,29 +16,47 @@ export function isJourneyPhase(phase: AssistantPhase): phase is JourneyPhase {
   return (JOURNEY_PHASES as readonly string[]).includes(phase);
 }
 
-/** Cool-down shown after a rate-limited answer, before the child can ask again. */
+/**
+ * Patience message threshold. Calibrated on the real latency measured in
+ * November 2026 (5–7 s, p90 ≈ 7 s), no longer on the old 30–90 s.
+ */
+export const STILL_WORKING_AFTER_S = 10;
+
+/** Fallback cool-down when a rate-limited message carries no delay (older servers). */
 export const RECHARGE_MS = 60_000;
+
+/** Real cool-down of a rate-limited message: the server's Retry-After, else 60 s. */
+export function rechargeSecondsOf(message: AssistantMessage): number {
+  const value = message.retryAfterSeconds;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.ceil(value) : RECHARGE_MS / 1000;
+}
+
+/** Seconds left before the child can ask again (0 when recharged). */
+export function rechargeLeftSeconds(message: AssistantMessage, now: number): number {
+  const total = rechargeSecondsOf(message);
+  return Math.min(total, Math.max(0, Math.ceil((message.createdAt + total * 1000 - now) / 1000)));
+}
 
 /**
  * Which special situation (if any) a Nova message represents.
- * `arrivalPhase` is the assistant phase recorded when the message arrived:
- * the contract has no dedicated "rate-limited" message kind, so a message of
- * kind `error` received while the phase is `rate-limited` is a recharge.
+ * Lot 2: the contract has a dedicated 'rate-limited' kind and the hook emits
+ * the 'offline' phase; `arrivalPhase` is the phase recorded when the message
+ * arrived (an error received while offline is an offline message).
  */
 export function specialCaseOf(
   message: AssistantMessage,
   arrivalPhase: AssistantPhase | undefined,
-  online: boolean,
 ): SpecialCase | null {
   if (message.role !== 'nova') return null;
   switch (message.kind) {
     case 'off-topic':
     case 'privacy':
     case 'safety':
+    case 'rate-limited':
       return message.kind;
     case 'error':
       if (arrivalPhase === 'rate-limited') return 'rate-limited';
-      if (arrivalPhase === 'offline' || !online) return 'offline';
+      if (arrivalPhase === 'offline') return 'offline';
       return 'error';
     default:
       if (arrivalPhase === 'rate-limited') return 'rate-limited';

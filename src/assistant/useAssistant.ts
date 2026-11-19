@@ -1,14 +1,22 @@
-import { useCallback, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useCosmosStore } from '../store/useCosmosStore';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AssistantContext,
   AssistantMessage,
   AssistantPhase,
-  ReadingLevel,
   UseAssistant,
 } from './types';
 import { useMockAssistant } from './mockAssistant';
+import {
+  isNavigatorOnline,
+  isNetworkError,
+  offlineText,
+  parseRetryAfter,
+  rateLimitedText,
+  useAssistantContext,
+  useLeaveOfflineOnReconnect,
+  useNavigatorOnline,
+  useSharedReadingLevel,
+} from './assistantShared';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -30,25 +38,7 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Context builder                                                   */
-/* ------------------------------------------------------------------ */
-
-function useAssistantContext(): AssistantContext {
-  const locale = useCosmosStore((s) => s.locale);
-  const view = useCosmosStore((s) => s.view);
-  const selectedObjectId = useCosmosStore((s) => s.selectedObjectId);
-  const activeJourneyId = useCosmosStore((s) => s.mission.activeJourneyId);
-  const { pathname } = useLocation();
-
-  return {
-    locale,
-    view: pathname || view,
-    selectedObjectId: selectedObjectId ?? null,
-    activeJourneyId: activeJourneyId ?? null,
-    readingLevel: 'curious',
-  };
-}
+const JOURNEY: readonly AssistantPhase[] = ['checking', 'searching-catalog', 'searching-web', 'verifying'];
 
 /* ------------------------------------------------------------------ */
 /*  Real assistant (calls /api/nova via SSE)                          */
@@ -56,24 +46,36 @@ function useAssistantContext(): AssistantContext {
 
 function useRealAssistant(): UseAssistant {
   const context = useAssistantContext();
+  const [readingLevel, setReadingLevel] = useSharedReadingLevel();
+  const navigatorOnline = useNavigatorOnline();
   const [messages, setMessages] = useState<readonly AssistantMessage[]>([]);
   const [phase, setPhase] = useState<AssistantPhase>('idle');
   const [isOpen, setIsOpen] = useState(false);
-  const [readingLevel, setReadingLevel] = useState<ReadingLevel>('curious');
   const [remainingQuestions, setRemainingQuestions] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
+  const messagesRef = useRef<readonly AssistantMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useLeaveOfflineOnReconnect(setPhase);
+
+  const push = useCallback((message: AssistantMessage) => {
+    setMessages((prev) => [...prev, message]);
+  }, []);
 
   const ask = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || phase === 'checking') return;
+    if (!trimmed || inFlightRef.current) return;
+    if (!isNavigatorOnline()) {
+      setPhase('offline');
+      return;
+    }
+    inFlightRef.current = true;
 
-    const childMsg: AssistantMessage = {
-      id: generateId(),
-      role: 'child',
-      text: trimmed,
-      createdAt: Date.now(),
-    };
-    setMessages((prev) => [...prev, childMsg]);
+    const history = messagesRef.current.slice(-6).map((m) => ({ role: m.role, text: m.text }));
+    push({ id: generateId(), role: 'child', text: trimmed, createdAt: Date.now() });
     setPhase('checking');
 
     abortRef.current?.abort();
@@ -81,32 +83,28 @@ function useRealAssistant(): UseAssistant {
     abortRef.current = controller;
 
     try {
-      const body = JSON.stringify({
-        question: trimmed,
-        context: { ...context, readingLevel },
-        history: messages.slice(-6).map((m) => ({ role: m.role, text: m.text })),
-      });
-
       const res = await fetch('/api/nova', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body,
+        body: JSON.stringify({ question: trimmed, context: { ...context, readingLevel }, history }),
         signal: controller.signal,
       });
 
       if (!res.ok) {
         if (res.status === 429) {
+          let body: unknown = null;
+          try { body = await res.json(); } catch { /* no JSON body */ }
+          const retryAfterSeconds = parseRetryAfter(res.headers.get('Retry-After'), body);
+          setRemainingQuestions(0);
           setPhase('rate-limited');
-          const errorMsg: AssistantMessage = {
+          push({
             id: generateId(),
             role: 'nova',
-            text: context.locale === 'fr'
-              ? 'Tu as posé beaucoup de questions ! Attends un peu avant de continuer.'
-              : 'You\'ve asked a lot of questions! Wait a bit before continuing.',
+            text: rateLimitedText(context.locale),
             createdAt: Date.now(),
-            kind: 'error',
-          };
-          setMessages((prev) => [...prev, errorMsg]);
+            kind: 'rate-limited',
+            retryAfterSeconds,
+          });
           return;
         }
         throw new Error(`HTTP ${res.status}`);
@@ -117,6 +115,7 @@ function useRealAssistant(): UseAssistant {
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let gotResult = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -126,29 +125,28 @@ function useRealAssistant(): UseAssistant {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
-        for (const line of lines) {
+        for (const [index, line] of lines.entries()) {
           if (line.startsWith('event: phase')) {
-            const dataLine = lines[lines.indexOf(line) + 1];
-            if (dataLine?.startsWith('data: ')) {
-              const phaseData = dataLine.slice(6).trim() as AssistantPhase;
-              setPhase(phaseData);
-            }
+            const dataLine = lines[index + 1];
+            if (dataLine?.startsWith('data: ')) setPhase(dataLine.slice(6).trim() as AssistantPhase);
           } else if (line.startsWith('data: ')) {
             const raw = line.slice(6).trim();
             if (!raw || raw === '[DONE]') continue;
             try {
               const parsed = JSON.parse(raw);
               if (parsed.type === 'phase') {
-                setPhase(parsed.phase as AssistantPhase);
+                // 'done'/'error' arrive just before the result: keep the journey until then.
+                if (JOURNEY.includes(parsed.phase)) setPhase(parsed.phase as AssistantPhase);
               } else if (parsed.type === 'result') {
+                gotResult = true;
                 const novaMsg: AssistantMessage = {
                   id: generateId(),
                   role: 'nova',
                   createdAt: Date.now(),
                   ...parsed.message,
                 };
-                setMessages((prev) => [...prev, novaMsg]);
-                setPhase('done');
+                push(novaMsg);
+                setPhase(novaMsg.kind === 'error' ? 'error' : 'done');
                 if (typeof parsed.remainingQuestions === 'number') {
                   setRemainingQuestions(parsed.remainingQuestions);
                 }
@@ -159,27 +157,33 @@ function useRealAssistant(): UseAssistant {
           }
         }
       }
+      if (!gotResult) throw new Error('Stream ended without a result');
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      setPhase('error');
-      const errorMsg: AssistantMessage = {
+      const offline = isNetworkError(err);
+      setPhase(offline ? 'offline' : 'error');
+      push({
         id: generateId(),
         role: 'nova',
-        text: context.locale === 'fr'
-          ? 'Oups, quelque chose n\'a pas fonctionné. Réessaie dans un instant !'
-          : 'Oops, something went wrong. Try again in a moment!',
+        text: offline
+          ? offlineText(context.locale)
+          : (context.locale === 'fr'
+            ? 'Oups, quelque chose n\'a pas fonctionné. Réessaie dans un instant !'
+            : 'Oops, something went wrong. Try again in a moment!'),
         createdAt: Date.now(),
         kind: 'error',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      });
+    } finally {
+      if (abortRef.current === controller) inFlightRef.current = false;
     }
-  }, [context, messages, phase, readingLevel]);
+  }, [context, push, readingLevel]);
 
   const suggestions = getSuggestionsForContext(context);
 
   return {
     messages,
-    phase,
+    // Single source of truth for 'offline': the browser says so, or a request failed for a network reason.
+    phase: navigatorOnline ? phase : 'offline',
     isOpen,
     suggestions,
     remainingQuestions,
@@ -188,8 +192,9 @@ function useRealAssistant(): UseAssistant {
     close: useCallback(() => setIsOpen(false), []),
     reset: useCallback(() => {
       abortRef.current?.abort();
+      inFlightRef.current = false;
       setMessages([]);
-      setPhase('idle');
+      setPhase((p) => (p === 'offline' ? 'offline' : 'idle'));
     }, []),
     setReadingLevel,
     readingLevel,

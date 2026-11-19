@@ -14,11 +14,12 @@
  */
 
 import { type LLMProvider, type ChatMessage, type NovaConfig, loadConfig, createMistralProvider } from './provider';
-import { validateRequest, containsPersonalInfo, isValidTravelDestination, type NovaRequest } from './validation';
+import { validateRequest, analyzePersonalInfo, maskPersonalInfo, isValidTravelDestination, type NovaRequest } from './validation';
 import { searchCatalog, type CatalogEntry } from './catalogSearch';
 import { getSystemPrompt, getClassificationPrompt, getVerificationPrompt, getTextAssemblyPrompt } from './prompts';
 import { checkRateLimit, type RateLimitResult } from './rateLimit';
-import { computeTravelActions } from './travelActions';
+import { allowedTravelDestinations, computeTravelActions } from './travelActions';
+import { toPlainText } from './plainText';
 import { createSearchProvider, type SearchProvider } from './webSearch';
 
 /* ------------------------------------------------------------------ */
@@ -55,7 +56,11 @@ interface NovaResult {
   followUps: string[];
   actions: AssistantAction[];
   guessFirst: boolean;
-  kind: 'answer' | 'off-topic' | 'safety' | 'privacy' | 'error';
+  /** 2–3 short hypotheses for "Guess first!" — never verified, never facts. */
+  guessChoices?: string[];
+  /** Short reminder when the child gave a first name (masked before the provider). */
+  privacyNote?: string;
+  kind: 'answer' | 'off-topic' | 'safety' | 'privacy' | 'error' | 'rate-limited';
 }
 
 /* ------------------------------------------------------------------ */
@@ -252,6 +257,7 @@ async function draftResponse(
   followUps: string[];
   actions: AssistantAction[];
   guessFirst: boolean;
+  guessChoices: string[];
 }> {
   const systemPrompt = getSystemPrompt(request.context.locale);
   const sourcesBlock = registry.formatForDraft();
@@ -307,13 +313,36 @@ async function draftResponse(
       followUps: Array.isArray(parsed.followUps) ? parsed.followUps.slice(0, 3) : [],
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
       guessFirst: parsed.guessFirst === true,
+      guessChoices: parsed.guessFirst === true ? sanitizeGuessChoices(parsed.guessChoices) : [],
     };
   } catch {
-    return { claims: [], followUps: [], actions: [], guessFirst: false };
+    return { claims: [], followUps: [], actions: [], guessFirst: false, guessChoices: [] };
   }
 }
 
-interface VerificationResult {
+/**
+ * "Guess first!" choices are hypotheses offered to the child, not claims:
+ * they never go through verification and are never shown as facts. Only
+ * 2–3 short, distinct, plain-text strings are kept; otherwise none.
+ */
+export function sanitizeGuessChoices(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const text = toPlainText(item).replace(/\s+/g, ' ').replace(/^•\s*/, '').trim();
+    if (!text || text.length > 60) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length === 3) break;
+  }
+  return out.length >= 2 ? out : [];
+}
+
+export interface VerificationResult {
   claimIndex: number;
   verdict: 'supported' | 'unsupported' | 'debated';
   supportingSourceIds?: string[];
@@ -350,6 +379,10 @@ async function verifyClaims(
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
+    if (process.env.NOVA_DEBUG === '1') {
+      console.log('[Nova debug] claims:', JSON.stringify(claims, null, 1));
+      console.log('[Nova debug] verdicts:', JSON.stringify(parsed.results, null, 1));
+    }
     if (Array.isArray(parsed.results)) {
       return parsed.results.map((r: { claimIndex: number; verdict: string; supportingSourceIds?: string[] }) => ({
         claimIndex: typeof r.claimIndex === 'number' ? r.claimIndex : 0,
@@ -363,6 +396,46 @@ async function verifyClaims(
     // Verification parse failure — mark all as unsupported (safe)
   }
   return claims.map((_, i) => ({ claimIndex: i, verdict: 'unsupported' as const }));
+}
+
+/**
+ * Apply the verifier's verdicts to the draft claims.
+ *
+ * - unsupported (or missing verdict) → dropped;
+ * - supported → verified, debated → debated;
+ * - sources = draft sourceIds ∪ verifier supportingSourceIds, both filtered
+ *   to the closed registry (no fallback to all sources);
+ * - lot 2: a claim that ends up with NO registry source is dropped, so a
+ *   "Vérifié" or "Débattu" claim always shows at least one real source.
+ */
+export function applyVerdicts(
+  draftClaims: ReadonlyArray<{ text: string; sourceIds: readonly string[] }>,
+  verdicts: readonly VerificationResult[],
+  registry: Pick<SourceRegistry, 'hasId'>,
+  openQuestion = false,
+): { claims: AssistantClaim[]; worstStatus: ClaimStatus } {
+  const claims: AssistantClaim[] = [];
+  let worstStatus: ClaimStatus = 'verified';
+
+  for (let i = 0; i < draftClaims.length; i++) {
+    const claim = draftClaims[i]!;
+    const verdict = verdicts.find((v) => v.claimIndex === i);
+    if (!verdict || verdict.verdict === 'unsupported') continue;
+
+    const status: ClaimStatus = verdict.verdict === 'debated' ? 'debated' : 'verified';
+    const draftIds = claim.sourceIds.filter((id) => registry.hasId(id));
+    const verifierIds = (verdict.supportingSourceIds ?? [])
+      .filter((id): id is string => typeof id === 'string' && registry.hasId(id));
+    const sourceIds = [...new Set([...draftIds, ...verifierIds])];
+    if (sourceIds.length === 0) continue; // no "Vérifié" without a source
+
+    claims.push({ text: claim.text, status, sourceIds });
+    if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
+  }
+
+  if (claims.length === 0) worstStatus = 'unknown';
+  if (openQuestion && worstStatus === 'verified') worstStatus = 'debated';
+  return { claims, worstStatus };
 }
 
 /**
@@ -461,11 +534,13 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
   }
 
   if (!rateLimitResult.allowed) {
-    return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+    // Real delay before the next question (sliding window), at least 1 s.
+    const retryAfterSeconds = Math.max(1, Math.ceil(rateLimitResult.retryAfterMs / 1000));
+    return new Response(JSON.stringify({ error: 'Rate limit exceeded', retryAfterSeconds }), {
       status: 429,
       headers: {
         'Content-Type': 'application/json',
-        'Retry-After': String(Math.ceil(rateLimitResult.retryAfterMs / 1000)),
+        'Retry-After': String(retryAfterSeconds),
         ...corsHeaders(request),
       },
     });
@@ -484,20 +559,40 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         const deadline = Date.now() + cfg.timeoutMs;
         const remainingMs = () => Math.max(deadline - Date.now(), 1000);
 
-        // Check cache
-        const ck = cacheKey(req.question, req.context.locale, req.context.readingLevel);
-        const cached = getCached(ck);
+        // --- Step 1: Privacy check (no LLM call needed) ---
+        // A first name alone is masked and the question is answered normally
+        // (with a short reminder); anything more personal is refused.
+        const privacy = analyzePersonalInfo(req.question);
+        const privacyNote = privacy.level === 'first-name'
+          ? (req.context.locale === 'fr'
+            ? 'Petit rappel : en ligne, garde ton prénom pour toi. Je n’en ai pas besoin pour te répondre !'
+            : 'Quick reminder: keep your name to yourself online. I don’t need it to answer you!')
+          : undefined;
+        const withNote = (result: NovaResult): NovaResult =>
+          privacyNote ? { ...result, privacyNote } : result;
+        const question = privacy.masked;
+        // History comes from the client: mask it the same way before it can reach the provider.
+        const history = req.history.map((entry) => {
+          if (entry.role !== 'child') return entry;
+          const analysis = analyzePersonalInfo(entry.text);
+          if (analysis.level === 'personal') return { ...entry, text: maskPersonalInfo(entry.text) };
+          return { ...entry, text: analysis.masked };
+        });
+        const maskedReq: NovaRequest = { ...req, question, history };
+
+        // Check cache (keyed on the masked question: names never reach the cache)
+        const ck = cacheKey(question, req.context.locale, req.context.readingLevel);
+        const cached = privacy.level === 'personal' ? null : getCached(ck);
         if (cached) {
           send(ssePhase('done'));
-          send(sseResult(cached, rateLimitResult.remaining));
+          send(sseResult(withNote(cached), rateLimitResult.remaining));
           controller.close();
           return;
         }
 
-        // --- Step 1: Privacy check (no LLM call needed) ---
         send(ssePhase('checking'));
 
-        if (containsPersonalInfo(req.question)) {
+        if (privacy.level === 'personal') {
           const privacyResult: NovaResult = {
             text: req.context.locale === 'fr'
               ? 'Attention ! Ne partage jamais ton nom complet, ton adresse, le nom de ton école, ton numéro de téléphone ou ton e-mail en ligne. C\'est une règle importante pour ta sécurité. Pose-moi plutôt une question sur l\'espace !'
@@ -520,9 +615,9 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         // --- Step 2: Classification + Catalog search + Web search (all parallel) ---
         send(ssePhase('searching-catalog'));
         const [classification, catalogResults, webResults] = await Promise.all([
-          classifyQuestion(llm, req.question, req.context.locale, cfg),
-          searchCatalog(req.question, req.context.locale),
-          webSearch.search(req.question, {
+          classifyQuestion(llm, question, req.context.locale, cfg),
+          searchCatalog(question, req.context.locale),
+          webSearch.search(question, {
             maxResults: 3,
             timeoutMs: Math.min(remainingMs(), 8_000),
           }).catch(() => [] as readonly import('./webSearch').WebResult[]),
@@ -543,7 +638,7 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             kind: 'safety',
           };
           send(ssePhase('done'));
-          send(sseResult(safetyResult, rateLimitResult.remaining));
+          send(sseResult(withNote(safetyResult), rateLimitResult.remaining));
           controller.close();
           return;
         }
@@ -563,7 +658,7 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             kind: 'off-topic',
           };
           send(ssePhase('done'));
-          send(sseResult(offTopicResult, rateLimitResult.remaining));
+          send(sseResult(withNote(offTopicResult), rateLimitResult.remaining));
           controller.close();
           return;
         }
@@ -589,7 +684,7 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         // --- Step 4: If no sources at all, return 'unknown' immediately ---
         if (registry.isEmpty()) {
           // 'unknown' answer: an action only if the object is clearly the question's subject
-          const unknownActions = await computeTravelActions(req.question, [], req.context.locale, { onlyIfInQuestion: true });
+          const unknownActions = await computeTravelActions(question, [], req.context.locale, { onlyIfInQuestion: true });
           const unknownResult: NovaResult = {
             text: req.context.locale === 'fr'
               ? 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans mes sources. Les scientifiques ne le savent peut-être pas encore !'
@@ -605,59 +700,25 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             kind: 'answer',
           };
           send(ssePhase('done'));
-          send(sseResult(unknownResult, rateLimitResult.remaining));
+          send(sseResult(withNote(unknownResult), rateLimitResult.remaining));
           controller.close();
           return;
         }
 
         // --- Step 5: Drafting (with closed source IDs) ---
         send(ssePhase('verifying'));
-        const draft = await draftResponse(llm, req, registry, cfg);
+        const draft = await draftResponse(llm, maskedReq, registry, cfg);
 
         // --- Step 6: Verification (extract-based, with supportingSourceIds) ---
         const verificationResults = await verifyClaims(
           llm, draft.claims, registry, req.context.locale, cfg,
         );
 
-        // Apply verification verdicts — drop unsupported claims
-        const verifiedClaims: AssistantClaim[] = [];
-        let worstStatus: ClaimStatus = 'verified';
-
-        for (let i = 0; i < draft.claims.length; i++) {
-          const claim = draft.claims[i]!;
-          const verdict = verificationResults.find((v) => v.claimIndex === i);
-
-          if (!verdict || verdict.verdict === 'unsupported') {
-            continue; // Drop unsupported claims
-          }
-
-          const status: ClaimStatus =
-            verdict.verdict === 'debated' ? 'debated' :
-            verdict.verdict === 'supported' ? 'verified' :
-            'unknown';
-
-          // Merge source attribution: draft sourceIds + verifier supportingSourceIds
-          // NO FALLBACK to all sources — if empty, claim has no sources
-          const draftIds = claim.sourceIds.filter((id) => registry.hasId(id));
-          const verifierIds = (verdict.supportingSourceIds ?? [])
-            .filter((id): id is string => typeof id === 'string' && registry.hasId(id));
-          const finalIds = [...new Set([...draftIds, ...verifierIds])];
-
-          verifiedClaims.push({
-            text: claim.text,
-            status,
-            sourceIds: finalIds,
-          });
-
-          if (status === 'unknown') worstStatus = 'unknown';
-          else if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
-        }
-
-        // --- Step 7: Open question override ---
-        // For open science questions, status can never be 'verified'
-        if (openQuestion && worstStatus === 'verified') {
-          worstStatus = 'debated';
-        }
+        // Apply verification verdicts — drop unsupported and source-less claims,
+        // cap open questions at 'debated'.
+        const applied = applyVerdicts(draft.claims, verificationResults, registry, openQuestion);
+        const verifiedClaims = applied.claims;
+        let worstStatus: ClaimStatus = applied.worstStatus;
 
         // --- Step 8: Assemble text from retained claims only ---
         let finalText: string;
@@ -688,15 +749,20 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
         // unreliable here). 'unknown' answers only get an action when the
         // object is clearly the subject of the question.
         const serverActions = await computeTravelActions(
-          req.question,
+          question,
           verifiedClaims,
           req.context.locale,
           { onlyIfInQuestion: worstStatus === 'unknown' },
         );
-        // Model-proposed actions are still accepted when valid, merged without duplicates
+        // Model-proposed actions are accepted only when valid AND allowed by the
+        // same rule (named in the question or cited catalog source).
+        const allowedIds = await allowedTravelDestinations(
+          question, verifiedClaims, { onlyIfInQuestion: worstStatus === 'unknown' },
+        );
         const modelActions = draft.actions
           .filter((a): a is AssistantAction =>
             a.kind === 'travel' &&
+            allowedIds.has(a.destinationId) &&
             typeof a.destinationId === 'string' &&
             isValidTravelDestination(a.destinationId) &&
             typeof a.label === 'string' &&
@@ -706,22 +772,28 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
 
         // Build final result — only sources referenced by verified claims
         const usedSourceIds = new Set(verifiedClaims.flatMap((c) => c.sourceIds));
+        // Plain-text rule: no Markdown ever reaches the child.
         const result: NovaResult = {
-          text: finalText,
+          text: toPlainText(finalText),
           status: worstStatus,
-          claims: verifiedClaims,
+          claims: verifiedClaims.map((c) => ({ ...c, text: toPlainText(c.text) })),
           sources: registry.filterByIds([...usedSourceIds]),
-          followUps: draft.followUps.slice(0, 3),
-          actions: validActions,
+          followUps: draft.followUps
+            .filter((f): f is string => typeof f === 'string')
+            .map(toPlainText)
+            .filter(Boolean)
+            .slice(0, 3),
+          actions: validActions.map((a) => ({ ...a, label: toPlainText(a.label) })),
           guessFirst: draft.guessFirst,
+          ...(draft.guessFirst && draft.guessChoices.length >= 2 ? { guessChoices: draft.guessChoices } : {}),
           kind: 'answer',
         };
 
-        // Cache the result
+        // Cache the result (without the per-request privacy note)
         setCache(ck, result);
 
         send(ssePhase('done'));
-        send(sseResult(result, rateLimitResult.remaining));
+        send(sseResult(withNote(result), rateLimitResult.remaining));
       } catch (err) {
         const isTimeout = (err as Error).name === 'AbortError'
           || (err as Error).message?.includes('abort');

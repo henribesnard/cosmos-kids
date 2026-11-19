@@ -36,7 +36,8 @@ Tu réponds TOUJOURS en JSON valide avec cette structure exacte :
   ],
   "followUps": ["question de relance 1", "question 2"],
   "actions": [{"kind": "travel", "destinationId": "id", "label": "texte du bouton"}],
-  "guessFirst": true|false
+  "guessFirst": true|false,
+  "guessChoices": ["hypothèse courte 1", "hypothèse courte 2", "hypothèse courte 3"]
 }
 
 IMPORTANT :
@@ -45,6 +46,8 @@ IMPORTANT :
 - N'inclus PAS de champ "sources" — les sources sont gérées par le serveur.
 - N'inclus PAS de champ "text" — le texte final sera assemblé à partir des claims vérifiés.
 - guessFirst = true quand la question invite l'enfant à faire une hypothèse avant de lire la réponse.
+- guessChoices : SEULEMENT si guessFirst = true, 2 ou 3 hypothèses très courtes (6 mots maximum chacune) que l'enfant peut choisir AVANT de lire la réponse. Ce sont des hypothèses, pas des faits : formule-les comme des possibilités (« Plus de 100 », « Une dizaine », « À cause de la poussière »), n'indique jamais laquelle est juste et ne les mets jamais dans les claims. Omets le champ (ou []) si guessFirst = false.
+- Écris en texte brut uniquement : pas de Markdown, pas d'astérisques, pas de tirets bas, pas de titres, pas de listes à puces.
 - N'inclus une action "travel" que si l'objet existe dans l'application.
 - 2 à 3 questions de relance, dans le domaine de l'astronomie.
 
@@ -75,7 +78,12 @@ RÈGLES CRITIQUES :
 - Utilise UNIQUEMENT les extraits de sources fournis. N'utilise PAS tes propres connaissances.
 - Une affirmation est "supported" UNIQUEMENT si l'extrait CONTIENT EXPLICITEMENT cette information.
 - Une affirmation SANS extrait, ou dont l'extrait NE MENTIONNE PAS l'information, est "unsupported".
-- "debated" = les extraits montrent des informations contradictoires ou une incertitude scientifique explicite.
+- "debated" = UNIQUEMENT un vrai débat scientifique : les extraits disent explicitement que les scientifiques ne sont pas d'accord, que la question n'est pas résolue, ou présentent des hypothèses concurrentes.
+- Ce ne sont PAS des débats — marque "supported" si au moins un extrait contient l'information :
+  • des valeurs qui concordent une fois arrondies ou converties (« environ 400 km », « 420 km », « 250 miles » ; « 90 minutes » et « environ 1 h 30 ») ; « environ » signifie une approximation, pas une incertitude ;
+  • une grandeur qui varie naturellement dans le temps (altitude d'une orbite, nombre de lunes connues qui augmente) quand l'affirmation donne une valeur approchée ou « au moins » ;
+  • une date ou un événement futur prévu (mission prévue en 2030, fin d'exploitation programmée) : c'est un plan, pas un débat scientifique — "supported" si un extrait mentionne ce plan et que l'affirmation le présente comme prévu ;
+  • un extrait qui ne parle simplement pas de l'affirmation — ignore-le et juge avec les extraits qui en parlent.
 - En cas de doute, marque "unsupported" — il vaut mieux admettre ne pas savoir que d'affirmer à tort.
 - Pour chaque verdict "supported" ou "debated", liste les identifiants de source qui contiennent l'information dans supportingSourceIds.
 
@@ -92,4 +100,4 @@ RÈGLES :
 - N'ajoute AUCUN fait nouveau. Reformule UNIQUEMENT les affirmations fournies.
 - Ne mentionne pas les sources ni les identifiants de source.
 - Adapte le ton au niveau de lecture (simple, curious, expert).
-- Réponds UNIQUEMENT avec le texte assemblé, sans JSON ni formatage.`;
+- Réponds UNIQUEMENT avec le texte assemblé, en TEXTE BRUT : pas de JSON, pas de Markdown, pas d'astérisques (*), pas de tirets bas (_), pas de titres (#), pas de listes à puces. Pour une emphase ou une onomatopée, écris simplement les mots (« Pouf ! » et non « *Pouf !* »).`;
