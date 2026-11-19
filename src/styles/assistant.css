@@ -72,6 +72,7 @@
 
 /* ---------- Messages ---------- */
 .nova-log { display: grid; flex: 1 1 auto; gap: 14px; list-style: none; margin: 0; min-height: 0; overflow-anchor: none; overflow-y: auto; overscroll-behavior: contain; padding: 0; scrollbar-color: rgba(99,230,255,.25) transparent; }
+.nova-log:not(:empty) { min-height: 160px; }
 .nova-msg { animation: nova-rise .3s ease both; scroll-margin-top: 8px; }
 .nova-msg--child { display: flex; justify-content: flex-end; }
 .nova-msg--nova { align-items: start; display: grid; gap: 8px; grid-template-columns: 38px minmax(0, 1fr); }
