@@ -8,10 +8,13 @@
  * 4. Refusal kinds (off-topic, privacy, safety) have no status field
  * 5. Debated claims flow through correctly
  * 6. SourceRegistry correctly manages sources and extracts
+ * 7. supportingSourceIds from verifier are merged with draft sourceIds
+ * 8. No fallback to all sources when claim has no sourceIds
+ * 9. openQuestion overrides status to never be 'verified'
  */
 import { describe, expect, it } from 'vitest';
 import { SourceRegistry } from './handler';
-import { getVerificationPrompt, getSystemPrompt, getTextAssemblyPrompt } from './prompts';
+import { getVerificationPrompt, getSystemPrompt, getClassificationPrompt, getTextAssemblyPrompt } from './prompts';
 import type { CatalogEntry } from './catalogSearch';
 
 /* ------------------------------------------------------------------ */
@@ -119,6 +122,16 @@ describe('updated prompts', () => {
       expect(prompt).toContain('EXPLICITLY contains');
       expect(prompt).toContain('unsupported');
     });
+
+    it('FR prompt requests supportingSourceIds', () => {
+      const prompt = getVerificationPrompt('fr');
+      expect(prompt).toContain('supportingSourceIds');
+    });
+
+    it('EN prompt requests supportingSourceIds', () => {
+      const prompt = getVerificationPrompt('en');
+      expect(prompt).toContain('supportingSourceIds');
+    });
   });
 
   describe('system prompt', () => {
@@ -126,7 +139,6 @@ describe('updated prompts', () => {
       const prompt = getSystemPrompt('fr');
       expect(prompt).toContain('SOURCES DISPONIBLES');
       expect(prompt).toContain('n\'inventes AUCUN identifiant');
-      // JSON format should not have sources or text as OUTPUT fields
       expect(prompt).toContain('N\'inclus PAS de champ "sources"');
       expect(prompt).toContain('N\'inclus PAS de champ "text"');
     });
@@ -135,9 +147,36 @@ describe('updated prompts', () => {
       const prompt = getSystemPrompt('en');
       expect(prompt).toContain('AVAILABLE SOURCES');
       expect(prompt).toContain('NEVER invent source IDs');
-      // JSON format should not have sources or text as OUTPUT fields
       expect(prompt).toContain('Do NOT include a "sources" field');
       expect(prompt).toContain('Do NOT include a "text" field');
+    });
+
+    it('FR prompt requires mandatory sourceIds per claim', () => {
+      const prompt = getSystemPrompt('fr');
+      expect(prompt).toContain('CRITIQUE');
+      expect(prompt).toContain('DOIT inclure au moins un sourceId');
+    });
+
+    it('EN prompt requires mandatory sourceIds per claim', () => {
+      const prompt = getSystemPrompt('en');
+      expect(prompt).toContain('CRITICAL');
+      expect(prompt).toContain('MUST include at least one sourceId');
+    });
+  });
+
+  describe('classification prompt', () => {
+    it('FR prompt includes openQuestion', () => {
+      const prompt = getClassificationPrompt('fr');
+      expect(prompt).toContain('openQuestion');
+      expect(prompt).toContain('trous noirs');
+      expect(prompt).toContain('matière noire');
+    });
+
+    it('EN prompt includes openQuestion', () => {
+      const prompt = getClassificationPrompt('en');
+      expect(prompt).toContain('openQuestion');
+      expect(prompt).toContain('black holes');
+      expect(prompt).toContain('dark matter');
     });
   });
 
@@ -212,7 +251,6 @@ describe('closed source filtering', () => {
 
 describe('refusal responses have no status field', () => {
   it('privacy result has no status', () => {
-    // Simulate what handler creates for privacy
     const privacyResult = {
       text: 'Be careful!',
       claims: [],
@@ -280,16 +318,23 @@ describe('refusal responses have no status field', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Verification verdicts logic                                        */
+/*  Verification verdicts logic (with supportingSourceIds)              */
 /* ------------------------------------------------------------------ */
 
 describe('verification verdict application', () => {
   type ClaimStatus = 'verified' | 'debated' | 'unknown';
 
+  interface VerdictInput {
+    claimIndex: number;
+    verdict: 'supported' | 'unsupported' | 'debated';
+    supportingSourceIds?: string[];
+  }
+
   function applyVerdicts(
     draftClaims: Array<{ text: string; sourceIds: string[] }>,
-    verdicts: Array<{ claimIndex: number; verdict: 'supported' | 'unsupported' | 'debated' }>,
+    verdicts: VerdictInput[],
     registry: SourceRegistry,
+    openQuestion = false,
   ): { claims: Array<{ text: string; status: ClaimStatus; sourceIds: string[] }>; worstStatus: ClaimStatus } {
     const verifiedClaims: Array<{ text: string; status: ClaimStatus; sourceIds: string[] }> = [];
     let worstStatus: ClaimStatus = 'verified';
@@ -307,9 +352,14 @@ describe('verification verdict application', () => {
         verdict.verdict === 'supported' ? 'verified' :
         'unknown';
 
-      const validSourceIds = claim.sourceIds.filter((id) => registry.hasId(id));
+      // Merge source attribution: draft sourceIds + verifier supportingSourceIds
+      // NO FALLBACK to all sources
+      const draftIds = claim.sourceIds.filter((id) => registry.hasId(id));
+      const verifierIds = (verdict.supportingSourceIds ?? [])
+        .filter((id) => typeof id === 'string' && registry.hasId(id));
+      const finalIds = [...new Set([...draftIds, ...verifierIds])];
 
-      verifiedClaims.push({ text: claim.text, status, sourceIds: validSourceIds });
+      verifiedClaims.push({ text: claim.text, status, sourceIds: finalIds });
 
       if (status === 'unknown') worstStatus = 'unknown';
       else if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
@@ -317,6 +367,11 @@ describe('verification verdict application', () => {
 
     if (verifiedClaims.length === 0 && draftClaims.length > 0) {
       worstStatus = 'unknown';
+    }
+
+    // Open question override: status can never be 'verified'
+    if (openQuestion && worstStatus === 'verified') {
+      worstStatus = 'debated';
     }
 
     return { claims: verifiedClaims, worstStatus };
@@ -340,7 +395,6 @@ describe('verification verdict application', () => {
 
     expect(claims).toHaveLength(1);
     expect(claims[0]!.text).toBe('Saturn has 146 moons');
-    // Unsupported claim text must NOT be in the retained claims
     expect(claims.some((c) => c.text.includes('cheese'))).toBe(false);
   });
 
@@ -385,7 +439,7 @@ describe('verification verdict application', () => {
 
     const { claims } = applyVerdicts(
       [{ text: 'Mystery claim', sourceIds: ['web-0'] }],
-      [], // empty verdicts
+      [],
       registry,
     );
 
@@ -416,6 +470,111 @@ describe('verification verdict application', () => {
     expect(claims[1]!.status).toBe('debated');
     expect(worstStatus).toBe('debated');
   });
+
+  /* ---- New: supportingSourceIds tests ---- */
+
+  it('supportingSourceIds from verifier are merged with draft sourceIds', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA Mars', 'https://nasa.gov/mars', 'NASA', 'Mars semi-major axis 227943824 km');
+
+    // Draft has empty sourceIds, but verifier found the supporting source
+    const { claims } = applyVerdicts(
+      [{ text: 'Mars is 228 million km from the Sun', sourceIds: [] }],
+      [{ claimIndex: 0, verdict: 'supported', supportingSourceIds: ['web-0'] }],
+      registry,
+    );
+
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.sourceIds).toEqual(['web-0']);
+  });
+
+  it('supportingSourceIds are deduplicated with draft sourceIds', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'Saturn facts');
+
+    const { claims } = applyVerdicts(
+      [{ text: 'Saturn has rings', sourceIds: ['web-0'] }],
+      [{ claimIndex: 0, verdict: 'supported', supportingSourceIds: ['web-0'] }],
+      registry,
+    );
+
+    expect(claims[0]!.sourceIds).toEqual(['web-0']);
+  });
+
+  it('invented supportingSourceIds from verifier are filtered out', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'data');
+
+    const { claims } = applyVerdicts(
+      [{ text: 'A fact', sourceIds: ['web-0'] }],
+      [{ claimIndex: 0, verdict: 'supported', supportingSourceIds: ['web-0', 'fake-99'] }],
+      registry,
+    );
+
+    expect(claims[0]!.sourceIds).toEqual(['web-0']);
+    expect(claims[0]!.sourceIds).not.toContain('fake-99');
+  });
+
+  /* ---- New: no source fallback tests ---- */
+
+  it('claim with no sourceIds and no supportingSourceIds has empty sources (no fallback)', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'some content');
+
+    const { claims } = applyVerdicts(
+      [{ text: 'A verified claim without sources', sourceIds: [] }],
+      [{ claimIndex: 0, verdict: 'supported' }],
+      registry,
+    );
+
+    expect(claims).toHaveLength(1);
+    // No fallback: sourceIds should be empty, NOT all registry sources
+    expect(claims[0]!.sourceIds).toEqual([]);
+  });
+
+  /* ---- New: openQuestion tests ---- */
+
+  it('openQuestion overrides verified status to debated', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'Black hole data');
+
+    const { worstStatus } = applyVerdicts(
+      [{ text: 'Black holes have event horizons', sourceIds: ['web-0'] }],
+      [{ claimIndex: 0, verdict: 'supported' }],
+      registry,
+      true, // openQuestion
+    );
+
+    expect(worstStatus).toBe('debated');
+  });
+
+  it('openQuestion does not override unknown status', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'data');
+
+    const { worstStatus } = applyVerdicts(
+      [{ text: 'Unknown claim', sourceIds: [] }],
+      [{ claimIndex: 0, verdict: 'unsupported' }],
+      registry,
+      true,
+    );
+
+    expect(worstStatus).toBe('unknown');
+  });
+
+  it('openQuestion keeps debated as debated', () => {
+    const registry = new SourceRegistry();
+    registry.addWeb('NASA', 'https://nasa.gov/x', 'NASA', 'data');
+
+    const { worstStatus } = applyVerdicts(
+      [{ text: 'A debated claim', sourceIds: ['web-0'] }],
+      [{ claimIndex: 0, verdict: 'debated' }],
+      registry,
+      true,
+    );
+
+    expect(worstStatus).toBe('debated');
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -426,7 +585,5 @@ describe('no sources → unknown', () => {
   it('empty registry means no drafting should happen', () => {
     const registry = new SourceRegistry();
     expect(registry.isEmpty()).toBe(true);
-    // The handler returns 'unknown' immediately when registry is empty
-    // This is tested at the integration level; here we verify the guard
   });
 });

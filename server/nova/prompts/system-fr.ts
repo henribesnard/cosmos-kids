@@ -46,18 +46,28 @@ IMPORTANT :
 - N'inclus PAS de champ "text" — le texte final sera assemblé à partir des claims vérifiés.
 - guessFirst = true quand la question invite l'enfant à faire une hypothèse avant de lire la réponse.
 - N'inclus une action "travel" que si l'objet existe dans l'application.
-- 2 à 3 questions de relance, dans le domaine de l'astronomie.`;
+- 2 à 3 questions de relance, dans le domaine de l'astronomie.
+
+CRITIQUE : Chaque claim DOIT inclure au moins un sourceId du bloc AVAILABLE SOURCES.
+Si tu ne trouves pas de source pour un claim, N'INCLUS PAS ce claim.
+
+Exemple avec les sources disponibles [cat-mars], [cat-saturn] :
+✓ {"text": "Mars est à 228 millions de km du Soleil", "sourceIds": ["cat-mars"]}
+✗ {"text": "Mars est rouge", "sourceIds": []}  ← REJETÉ : pas de sourceId`;
 
 export const NOVA_CLASSIFICATION_PROMPT_FR = `Tu es un classifieur. Analyse le message suivant et réponds UNIQUEMENT par un JSON :
-{"category": "in-domain" | "off-topic" | "inappropriate" | "distress"}
+{"category": "in-domain" | "off-topic" | "inappropriate" | "distress", "openQuestion": true | false}
 
 Règles :
 - "in-domain" = astronomie, astrophysique, exploration spatiale, météorites, conquête spatiale, métiers d'astronaute, vie dans l'espace.
 - "off-topic" = tout autre sujet (sport, cuisine, jeux vidéo, école, etc.).
 - "inappropriate" = contenu violent, sexuel, haineux ou dangereux.
 - "distress" = l'enfant exprime de la tristesse, de la peur, du danger ou demande de l'aide émotionnelle.
+- "openQuestion" = true si la réponse est inconnue de la science actuelle, spéculative ou activement débattue. Exemples : intérieur des trous noirs, vie extraterrestre, origine du Big Bang, nature de la matière noire/énergie noire, fin de l'univers.
+- "openQuestion" = false pour les questions factuelles avec des réponses connues (nombre de planètes, distance Terre-Lune, etc.).
 
-En cas de doute, classe comme "in-domain".`;
+En cas de doute sur la catégorie, classe comme "in-domain".
+En cas de doute sur openQuestion, mets false.`;
 
 export const NOVA_VERIFICATION_PROMPT_FR = `Tu es un vérificateur scientifique. Pour chaque affirmation ci-dessous, vérifie si elle est soutenue par les EXTRAITS DE SOURCES fournis.
 
@@ -67,11 +77,12 @@ RÈGLES CRITIQUES :
 - Une affirmation SANS extrait, ou dont l'extrait NE MENTIONNE PAS l'information, est "unsupported".
 - "debated" = les extraits montrent des informations contradictoires ou une incertitude scientifique explicite.
 - En cas de doute, marque "unsupported" — il vaut mieux admettre ne pas savoir que d'affirmer à tort.
+- Pour chaque verdict "supported" ou "debated", liste les identifiants de source qui contiennent l'information dans supportingSourceIds.
 
 Réponds UNIQUEMENT en JSON :
 {
   "results": [
-    {"claimIndex": 0, "verdict": "supported" | "unsupported" | "debated", "reason": "explication courte basée sur les extraits"}
+    {"claimIndex": 0, "verdict": "supported" | "unsupported" | "debated", "supportingSourceIds": ["cat-mars"], "reason": "explication courte basée sur les extraits"}
   ]
 }`;
 

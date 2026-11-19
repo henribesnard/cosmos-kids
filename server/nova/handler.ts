@@ -18,7 +18,7 @@ import { validateRequest, containsPersonalInfo, isValidTravelDestination, type N
 import { searchCatalog, type CatalogEntry } from './catalogSearch';
 import { getSystemPrompt, getClassificationPrompt, getVerificationPrompt, getTextAssemblyPrompt } from './prompts';
 import { checkRateLimit, type RateLimitResult } from './rateLimit';
-import { searchWeb } from './webSearch';
+import { createSearchProvider, type SearchProvider } from './webSearch';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -188,11 +188,13 @@ function setCache(key: string, result: NovaResult): void {
 
 let provider: LLMProvider | null = null;
 let config: NovaConfig | null = null;
+let searchProvider: SearchProvider | null = null;
 
-function getProviderAndConfig(): { provider: LLMProvider; config: NovaConfig } {
+function getProviderAndConfig(): { provider: LLMProvider; config: NovaConfig; search: SearchProvider } {
   if (!config) config = loadConfig();
   if (!provider) provider = createMistralProvider(config);
-  return { provider, config };
+  if (!searchProvider) searchProvider = createSearchProvider(config.exaApiKey);
+  return { provider, config, search: searchProvider };
 }
 
 /** Reset singleton for testing. */
@@ -205,29 +207,38 @@ export function _resetProviderForTest(p: LLMProvider, c: NovaConfig): void {
 /*  Pipeline steps                                                     */
 /* ------------------------------------------------------------------ */
 
+interface ClassificationResult {
+  category: 'in-domain' | 'off-topic' | 'inappropriate' | 'distress';
+  openQuestion: boolean;
+}
+
 async function classifyQuestion(
   llm: LLMProvider,
   question: string,
   locale: 'fr' | 'en',
   cfg: NovaConfig,
-): Promise<'in-domain' | 'off-topic' | 'inappropriate' | 'distress'> {
+): Promise<ClassificationResult> {
   const classPrompt = getClassificationPrompt(locale);
 
   const response = await llm.chat([
     { role: 'system', content: classPrompt },
     { role: 'user', content: question },
-  ], { temperature: 0.1, maxTokens: 50, jsonMode: true, model: cfg.classificationModel });
+  ], { temperature: 0.1, maxTokens: 100, jsonMode: true, model: cfg.classificationModel });
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
     const cat = parsed.category;
-    if (['in-domain', 'off-topic', 'inappropriate', 'distress'].includes(cat)) {
-      return cat;
-    }
+    const validCategory = ['in-domain', 'off-topic', 'inappropriate', 'distress'].includes(cat)
+      ? cat as ClassificationResult['category']
+      : 'in-domain';
+    return {
+      category: validCategory,
+      openQuestion: parsed.openQuestion === true,
+    };
   } catch {
     // Parse failure — default to in-domain (safe fallback)
   }
-  return 'in-domain';
+  return { category: 'in-domain', openQuestion: false };
 }
 
 async function draftResponse(
@@ -301,27 +312,32 @@ async function draftResponse(
   }
 }
 
+interface VerificationResult {
+  claimIndex: number;
+  verdict: 'supported' | 'unsupported' | 'debated';
+  supportingSourceIds?: string[];
+}
+
+const MAX_EXTRACT_CHARS = 1500;
+
 async function verifyClaims(
   llm: LLMProvider,
   claims: Array<{ text: string; sourceIds: string[] }>,
   registry: SourceRegistry,
   locale: 'fr' | 'en',
-): Promise<Array<{ claimIndex: number; verdict: 'supported' | 'unsupported' | 'debated' }>> {
+  cfg: NovaConfig,
+): Promise<VerificationResult[]> {
   if (claims.length === 0) return [];
 
   const verifyPrompt = getVerificationPrompt(locale);
 
   // Build claims block with REAL EXTRACTS from registry
-  // If a claim has no sourceIds, provide ALL registry extracts so the verifier can still check
+  // Always provide ALL registry extracts so the verifier can find supporting sources
+  // even when the draft didn't cite them
   const allExtracts = registry.allSourcesWithExtracts();
   const claimsBlock = claims.map((c, i) => {
-    const idsToCheck = c.sourceIds.length > 0 ? c.sourceIds : allExtracts.map((s) => s.id);
-    const extracts = idsToCheck
-      .map((sid) => {
-        const extract = registry.getExtract(sid);
-        return extract ? `  [${sid}] ${extract}` : null;
-      })
-      .filter(Boolean)
+    const extracts = allExtracts
+      .map((s) => `  [${s.id}] ${s.extract.slice(0, MAX_EXTRACT_CHARS)}`)
       .join('\n');
     return `Claim ${i}: "${c.text}"\n${extracts || '  No source extracts available.'}`;
   }).join('\n\n');
@@ -329,16 +345,17 @@ async function verifyClaims(
   const response = await llm.chat([
     { role: 'system', content: verifyPrompt },
     { role: 'user', content: claimsBlock },
-  ], { temperature: 0.1, maxTokens: 2048, jsonMode: true });
+  ], { temperature: 0.1, maxTokens: 2048, jsonMode: true, model: cfg.verificationModel });
 
   try {
     const parsed = JSON.parse(response.content ?? '{}');
     if (Array.isArray(parsed.results)) {
-      return parsed.results.map((r: { claimIndex: number; verdict: string }) => ({
+      return parsed.results.map((r: { claimIndex: number; verdict: string; supportingSourceIds?: string[] }) => ({
         claimIndex: typeof r.claimIndex === 'number' ? r.claimIndex : 0,
         verdict: ['supported', 'unsupported', 'debated'].includes(r.verdict)
           ? r.verdict as 'supported' | 'unsupported' | 'debated'
           : 'unsupported',
+        supportingSourceIds: Array.isArray(r.supportingSourceIds) ? r.supportingSourceIds : undefined,
       }));
     }
   } catch {
@@ -460,7 +477,11 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
       const send = (data: string) => controller.enqueue(encoder.encode(data));
 
       try {
-        const { provider: llm, config: cfg } = getProviderAndConfig();
+        const { provider: llm, config: cfg, search: webSearch } = getProviderAndConfig();
+
+        // Global timeout budget
+        const deadline = Date.now() + cfg.timeoutMs;
+        const remainingMs = () => Math.max(deadline - Date.now(), 1000);
 
         // Check cache
         const ck = cacheKey(req.question, req.context.locale, req.context.readingLevel);
@@ -495,11 +516,18 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           return;
         }
 
-        // --- Step 2: Classification + Catalog search (parallel) ---
-        const [category, catalogResults] = await Promise.all([
+        // --- Step 2: Classification + Catalog search + Web search (all parallel) ---
+        send(ssePhase('searching-catalog'));
+        const [classification, catalogResults, webResults] = await Promise.all([
           classifyQuestion(llm, req.question, req.context.locale, cfg),
           searchCatalog(req.question, req.context.locale),
+          webSearch.search(req.question, {
+            maxResults: 3,
+            timeoutMs: Math.min(remainingMs(), 8_000),
+          }).catch(() => [] as readonly import('./webSearch').WebResult[]),
         ]);
+
+        const { category, openQuestion } = classification;
 
         if (category === 'distress') {
           const safetyResult: NovaResult = {
@@ -539,8 +567,7 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           return;
         }
 
-        // --- Step 3: Register catalog sources ---
-        send(ssePhase('searching-catalog'));
+        // --- Step 3: Register catalog + web sources ---
         const registry = new SourceRegistry();
         for (const entry of catalogResults) {
           if (entry.sourceUrl) {
@@ -548,28 +575,17 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           }
         }
 
-        // --- Step 4: Web search (if catalog insufficient) ---
-        if (catalogResults.length < 2 && cfg.braveSearchApiKey) {
+        if (webResults.length > 0) {
           send(ssePhase('searching-web'));
-          try {
-            const webResults = await searchWeb(req.question, {
-              apiKey: cfg.braveSearchApiKey,
-              timeoutMs: Math.min(cfg.timeoutMs, 10_000),
-              maxResults: 5,
-            });
-
-            for (const r of webResults) {
-              const extractText = r.pageText || r.snippet;
-              if (extractText) {
-                registry.addWeb(r.title, r.url, extractPublisher(r.url), extractText);
-              }
+          for (const r of webResults) {
+            const extractText = r.pageText || r.snippet;
+            if (extractText) {
+              registry.addWeb(r.title, r.url, extractPublisher(r.url), extractText);
             }
-          } catch {
-            // Web search failure is non-fatal; proceed with catalog only
           }
         }
 
-        // --- Step 5: If no sources at all, return 'unknown' immediately ---
+        // --- Step 4: If no sources at all, return 'unknown' immediately ---
         if (registry.isEmpty()) {
           const unknownResult: NovaResult = {
             text: req.context.locale === 'fr'
@@ -591,13 +607,13 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
           return;
         }
 
-        // --- Step 6: Drafting (with closed source IDs) ---
+        // --- Step 5: Drafting (with closed source IDs) ---
         send(ssePhase('verifying'));
         const draft = await draftResponse(llm, req, registry, cfg);
 
-        // --- Step 7: Verification (extract-based) ---
+        // --- Step 6: Verification (extract-based, with supportingSourceIds) ---
         const verificationResults = await verifyClaims(
-          llm, draft.claims, registry, req.context.locale,
+          llm, draft.claims, registry, req.context.locale, cfg,
         );
 
         // Apply verification verdicts — drop unsupported claims
@@ -617,21 +633,27 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             verdict.verdict === 'supported' ? 'verified' :
             'unknown';
 
-          // Keep sourceIds that exist in registry; if claim had no sourceIds,
-          // assign all registry source IDs (verifier already checked against them)
-          let validSourceIds = claim.sourceIds.filter((id) => registry.hasId(id));
-          if (validSourceIds.length === 0) {
-            validSourceIds = registry.allSources().map((s) => s.id);
-          }
+          // Merge source attribution: draft sourceIds + verifier supportingSourceIds
+          // NO FALLBACK to all sources — if empty, claim has no sources
+          const draftIds = claim.sourceIds.filter((id) => registry.hasId(id));
+          const verifierIds = (verdict.supportingSourceIds ?? [])
+            .filter((id): id is string => typeof id === 'string' && registry.hasId(id));
+          const finalIds = [...new Set([...draftIds, ...verifierIds])];
 
           verifiedClaims.push({
             text: claim.text,
             status,
-            sourceIds: validSourceIds,
+            sourceIds: finalIds,
           });
 
           if (status === 'unknown') worstStatus = 'unknown';
           else if (status === 'debated' && worstStatus === 'verified') worstStatus = 'debated';
+        }
+
+        // --- Step 7: Open question override ---
+        // For open science questions, status can never be 'verified'
+        if (openQuestion && worstStatus === 'verified') {
+          worstStatus = 'debated';
         }
 
         // --- Step 8: Assemble text from retained claims only ---
@@ -642,9 +664,19 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             ? 'Je n\'ai pas pu vérifier cette information avec mes sources. Les scientifiques ne le savent peut-être pas encore, ou bien personne ne le sait pour l\'instant.'
             : 'I couldn\'t verify this information with my sources. Scientists may not know yet, or nobody knows for now.';
         } else {
-          finalText = await assembleText(
+          let assembled = await assembleText(
             llm, verifiedClaims, req.context.locale, req.context.readingLevel, cfg,
           );
+
+          // Prepend caveat for open questions
+          if (openQuestion) {
+            const caveat = req.context.locale === 'fr'
+              ? 'Les scientifiques ne connaissent pas encore la réponse complète à cette question. '
+              : 'Scientists don\'t fully know the answer to this yet. ';
+            assembled = caveat + assembled;
+          }
+
+          finalText = assembled;
         }
 
         // --- Step 9: Filter actions (whitelist destinations) ---

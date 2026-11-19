@@ -75,17 +75,19 @@ export interface NovaConfig {
   readonly model: string;
   readonly draftModel: string;
   readonly classificationModel: string;
+  readonly verificationModel: string;
   readonly maxQuestionsPerHour: number;
   readonly timeoutMs: number;
   readonly maxHistoryMessages: number;
-  readonly braveSearchApiKey: string;
+  readonly exaApiKey: string;
 }
 
 const DEFAULT_MODEL = 'mistral-large-latest';
 const DEFAULT_DRAFT_MODEL = 'mistral-small-latest';
 const DEFAULT_CLASSIFICATION_MODEL = 'mistral-small-latest';
 const DEFAULT_MAX_QUESTIONS_PER_HOUR = 20;
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_VERIFICATION_MODEL = 'mistral-small-latest';
 const DEFAULT_MAX_HISTORY_MESSAGES = 6;
 
 export function loadConfig(): NovaConfig {
@@ -100,10 +102,11 @@ export function loadConfig(): NovaConfig {
     model: process.env.NOVA_MODEL ?? DEFAULT_MODEL,
     draftModel: process.env.NOVA_DRAFT_MODEL ?? DEFAULT_DRAFT_MODEL,
     classificationModel: process.env.NOVA_CLASSIFICATION_MODEL ?? DEFAULT_CLASSIFICATION_MODEL,
+    verificationModel: process.env.NOVA_VERIFICATION_MODEL ?? DEFAULT_VERIFICATION_MODEL,
     maxQuestionsPerHour: Number(process.env.NOVA_MAX_QUESTIONS_PER_HOUR) || DEFAULT_MAX_QUESTIONS_PER_HOUR,
     timeoutMs: Number(process.env.NOVA_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
     maxHistoryMessages: Number(process.env.NOVA_MAX_HISTORY_MESSAGES) || DEFAULT_MAX_HISTORY_MESSAGES,
-    braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY ?? '',
+    exaApiKey: process.env.EXA_API_KEY ?? '',
   };
 }
 

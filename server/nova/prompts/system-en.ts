@@ -46,18 +46,28 @@ IMPORTANT:
 - Do NOT include a "text" field — the final text will be assembled from verified claims.
 - guessFirst = true when the question invites the child to guess before reading the answer.
 - Only include a "travel" action if the object exists in the application.
-- 2 to 3 follow-up questions, within the astronomy domain.`;
+- 2 to 3 follow-up questions, within the astronomy domain.
+
+CRITICAL: Each claim MUST include at least one sourceId from the AVAILABLE SOURCES block.
+If you cannot find a source for a claim, do NOT include that claim.
+
+Example with available sources [cat-mars], [cat-saturn]:
+✓ {"text": "Mars is 228 million km from the Sun", "sourceIds": ["cat-mars"]}
+✗ {"text": "Mars is red", "sourceIds": []}  ← REJECTED: no sourceId`;
 
 export const NOVA_CLASSIFICATION_PROMPT_EN = `You are a classifier. Analyze the following message and respond ONLY with JSON:
-{"category": "in-domain" | "off-topic" | "inappropriate" | "distress"}
+{"category": "in-domain" | "off-topic" | "inappropriate" | "distress", "openQuestion": true | false}
 
 Rules:
 - "in-domain" = astronomy, astrophysics, space exploration, meteorites, space history, astronaut careers, life in space.
 - "off-topic" = any other subject (sports, cooking, video games, school, etc.).
 - "inappropriate" = violent, sexual, hateful, or dangerous content.
 - "distress" = the child expresses sadness, fear, danger, or asks for emotional help.
+- "openQuestion" = true if the answer is unknown to current science, inherently speculative, or actively debated by scientists. Examples: interior of black holes, extraterrestrial life, what caused the Big Bang, nature of dark matter/dark energy, end of the universe.
+- "openQuestion" = false for factual questions with known answers (number of planets, Earth-Moon distance, etc.).
 
-When in doubt, classify as "in-domain".`;
+When in doubt about category, classify as "in-domain".
+When in doubt about openQuestion, set false.`;
 
 export const NOVA_VERIFICATION_PROMPT_EN = `You are a scientific verifier. For each claim below, check if it is supported by the provided source EXTRACTS.
 
@@ -67,11 +77,12 @@ CRITICAL RULES:
 - A claim with NO extract, or whose extract does NOT mention the information, is "unsupported".
 - "debated" = the extracts show conflicting information or explicit scientific uncertainty.
 - When in doubt, mark "unsupported" — it is better to admit not knowing than to affirm incorrectly.
+- For each "supported" or "debated" verdict, list the source IDs that contain the information in supportingSourceIds.
 
 Respond ONLY in JSON:
 {
   "results": [
-    {"claimIndex": 0, "verdict": "supported" | "unsupported" | "debated", "reason": "short explanation based on the extracts"}
+    {"claimIndex": 0, "verdict": "supported" | "unsupported" | "debated", "supportingSourceIds": ["cat-mars"], "reason": "short explanation based on the extracts"}
   ]
 }`;
 
