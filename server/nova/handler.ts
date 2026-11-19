@@ -118,6 +118,10 @@ export class SourceRegistry {
     return this.sources.size === 0;
   }
 
+  allSourcesWithExtracts(): Array<{ id: string; extract: string }> {
+    return [...this.sources.entries()].map(([id, s]) => ({ id, extract: s.extract }));
+  }
+
   /** Format all sources as a context block for the draft LLM. */
   formatForDraft(): string {
     if (this.sources.size === 0) return '';
@@ -308,8 +312,11 @@ async function verifyClaims(
   const verifyPrompt = getVerificationPrompt(locale);
 
   // Build claims block with REAL EXTRACTS from registry
+  // If a claim has no sourceIds, provide ALL registry extracts so the verifier can still check
+  const allExtracts = registry.allSourcesWithExtracts();
   const claimsBlock = claims.map((c, i) => {
-    const extracts = c.sourceIds
+    const idsToCheck = c.sourceIds.length > 0 ? c.sourceIds : allExtracts.map((s) => s.id);
+    const extracts = idsToCheck
       .map((sid) => {
         const extract = registry.getExtract(sid);
         return extract ? `  [${sid}] ${extract}` : null;
@@ -610,8 +617,12 @@ export async function handleNovaRequest(request: Request): Promise<Response> {
             verdict.verdict === 'supported' ? 'verified' :
             'unknown';
 
-          // Only keep sourceIds that exist in registry
-          const validSourceIds = claim.sourceIds.filter((id) => registry.hasId(id));
+          // Keep sourceIds that exist in registry; if claim had no sourceIds,
+          // assign all registry source IDs (verifier already checked against them)
+          let validSourceIds = claim.sourceIds.filter((id) => registry.hasId(id));
+          if (validSourceIds.length === 0) {
+            validSourceIds = registry.allSources().map((s) => s.id);
+          }
 
           verifiedClaims.push({
             text: claim.text,

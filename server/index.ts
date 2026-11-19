@@ -19,8 +19,29 @@
  * - Network access to api.mistral.ai
  */
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { handleNovaRequest } from './nova/handler';
+
+// Load .env file BEFORE importing handler (which reads process.env at config time)
+try {
+  const envPath = resolve(process.cwd(), '.env');
+  const envContent = readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim().replace(/\r$/, '');
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx);
+    const value = trimmed.slice(eqIdx + 1);
+    if (!process.env[key]) process.env[key] = value;
+  }
+} catch {
+  // .env file not found — rely on environment variables
+}
+
+// Dynamic import so env vars are set before handler loads config
+const { handleNovaRequest } = await import('./nova/handler');
 
 const PORT = Number(process.env.NOVA_PORT) || 3001;
 const HOST = process.env.NOVA_HOST || '127.0.0.1';

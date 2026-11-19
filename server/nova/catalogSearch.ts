@@ -135,6 +135,22 @@ async function loadCatalog(): Promise<readonly CatalogEntry[]> {
 /*  Search function                                                    */
 /* ------------------------------------------------------------------ */
 
+// Stop words that inflate scores without adding search relevance
+const STOP_WORDS = new Set([
+  // French
+  'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'en', 'au', 'aux',
+  'ce', 'se', 'ne', 'pas', 'que', 'qui', 'sur', 'par', 'pour', 'dans', 'avec',
+  'est', 'sont', 'sa', 'son', 'ses', 'il', 'elle', 'on', 'nous', 'vous',
+  'mon', 'ma', 'mes', 'ton', 'ta', 'tes', 'notre', 'votre', 'leur', 'leurs',
+  'combien', 'comment', 'quel', 'quelle', 'quoi', 'quand', 'peut',
+  // English
+  'the', 'is', 'of', 'in', 'to', 'and', 'or', 'an', 'it', 'at', 'by',
+  'be', 'as', 'on', 'do', 'if', 'no', 'so', 'up', 'we', 'he', 'she',
+  'how', 'what', 'when', 'where', 'why', 'which', 'who', 'has', 'have',
+  'are', 'was', 'were', 'been', 'from', 'that', 'this', 'with', 'for',
+  'many', 'much', 'does', 'there', 'far',
+]);
+
 export async function searchCatalog(
   query: string,
   locale: 'fr' | 'en',
@@ -142,7 +158,10 @@ export async function searchCatalog(
 ): Promise<readonly CatalogEntry[]> {
   const entries = await loadCatalog();
   const lowerQuery = query.toLowerCase();
-  const terms = lowerQuery.split(/\s+/).filter((t) => t.length >= 2);
+  const terms = lowerQuery
+    .replace(/[?!.,;:'"()]/g, '')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !STOP_WORDS.has(t));
 
   if (terms.length === 0) return [];
 

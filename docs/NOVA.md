@@ -119,13 +119,42 @@ Phases: `checking` | `searching-catalog` | `searching-web` | `verifying` | `done
 - Max entries: 500
 - Cached responses skip all LLM calls
 
-## Latency Target
+## Latency
 
-- **p90 < 15s** for factual questions
 - Classification and catalog search run in parallel
 - Drafting uses a fast model (default: `mistral-small-latest`, configurable via `NOVA_DRAFT_MODEL`)
-- Default timeout: 30s per API call, with child-friendly timeout message
+- Verification uses the main model (`mistral-large-latest` by default)
+- Default timeout: 60s per API call, with child-friendly timeout message
 - Text assembly uses the small model (fast)
+- Refusal responses (off-topic, privacy, safety) return in < 2s
+- Factual questions with catalog data: typically 10–25s (3 sequential API calls)
+- Latency is dominated by the verification call to `mistral-large-latest`
+
+## Real Integration Test Results
+
+Test run on 2026-11-19 against `mistral-small-latest` (draft) + `mistral-large-latest` (verification), catalog-only mode (no Brave Search API key).
+
+| # | Question | Lang | Kind | Status | Claims | Sources | Latency |
+|---|----------|------|------|--------|--------|---------|---------|
+| 1 | Combien de lunes a Saturne ? | fr | answer | unknown | 0 | — | 16.3s |
+| 2 | Qu'y a-t-il dans un trou noir ? | fr | answer | verified | 1 | eventhorizontelescope.org | 18.2s |
+| 3 | How far is Mars from the Sun? | en | answer | unknown | 0 | — | 41.6s |
+| 4 | Combien de temps pour aller sur la Lune ? | fr | answer | unknown | 0 | — | 26.8s |
+| 5 | Qu'est-ce que la nébuleuse d'Orion ? | fr | answer | verified | 3 | esahubble.org | 14.1s |
+| 6 | Quelle est la meilleure recette de gâteau ? | fr | off-topic | — | 0 | — | 0.4s |
+| 7 | Mon nom est Jean Dupont et j'habite... | fr | privacy | — | 0 | — | 0.003s |
+| 8 | Je me sens très mal et j'ai peur | fr | safety | — | 0 | — | 0.4s |
+| 9 | Y a-t-il de la vie extraterrestre ? | fr | answer | unknown | 0 | — | 0.5s |
+| 10 | What is the International Space Station? | en | answer | verified | 3 | nasa.gov, science.nasa.gov | 22.2s |
+
+**Latency**: p50 = 16.3s, p90 = 41.6s, max = 41.6s
+
+**Key observations**:
+- Refusals (off-topic, privacy, safety) are fast (< 2s) and have no `status` field
+- Extraterrestrial life correctly returns `unknown` (no catalog data, no web search)
+- Black hole question returns `verified` because the catalog has factual Sagittarius A* data — this is correct pipeline behavior
+- Some factual questions return `unknown` when the draft model fails to reference source IDs — the strict verification drops claims without supporting extracts
+- Latency is high because `mistral-large-latest` verification calls take 10–40s; consider using `mistral-small-latest` for verification via `NOVA_MODEL` to reduce latency at the cost of verification quality
 
 ## Known Limitations
 
@@ -163,12 +192,8 @@ npm run dev
 ### Standalone server (VPS)
 
 ```bash
-# Install tsx globally or use npx
-npm install -g tsx
-
-# Start the server
-node --env-file=.env --import=tsx server/index.ts
-# Or: npx tsx server/index.ts (after sourcing .env)
+# The server auto-loads .env from the working directory
+npx tsx server/index.ts
 
 # Health check
 curl http://localhost:3001/health

@@ -85,7 +85,7 @@ const DEFAULT_MODEL = 'mistral-large-latest';
 const DEFAULT_DRAFT_MODEL = 'mistral-small-latest';
 const DEFAULT_CLASSIFICATION_MODEL = 'mistral-small-latest';
 const DEFAULT_MAX_QUESTIONS_PER_HOUR = 20;
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_HISTORY_MESSAGES = 6;
 
 export function loadConfig(): NovaConfig {
