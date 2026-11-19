@@ -109,7 +109,7 @@ export function NovaMessage({
                   <span className="nova-btn__detail">{action.label}</span>
                 </button>
               ))}
-              {message.status === 'unknown' && !special && (
+              {(message.status === 'unknown' || message.status === 'debated') && !special && (
                 <button
                   type="button"
                   className="nova-btn nova-btn--mystery"

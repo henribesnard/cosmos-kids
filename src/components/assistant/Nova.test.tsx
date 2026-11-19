@@ -2,9 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AssistantMessage } from '../../assistant/types';
 import { useCosmosStore } from '../../store';
 import { DiscoveryLog } from '../DiscoveryLog';
 import { NovaDock } from './NovaDock';
+import { NovaMessage } from './NovaMessage';
 import NovaPanel from './NovaPanel';
 import { TruthSeal } from './TruthSeal';
 import { NOVA_MET_STORAGE_KEY } from './novaHooks';
@@ -25,6 +27,37 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof NovaPanel>> 
   };
   const utils = render(<MemoryRouter><NovaPanel {...props} /></MemoryRouter>);
   return { ...utils, props };
+}
+
+function renderNovaMessage(
+  status: AssistantMessage['status'],
+  special: 'off-topic' | 'privacy' | 'safety' | 'error' | null = null,
+) {
+  const message: AssistantMessage = {
+    id: 'nova-message',
+    role: 'nova',
+    text: 'Réponse de Nova',
+    createdAt: Date.now(),
+    ...(status ? { status } : {}),
+    ...(special ? { kind: special } : {}),
+  };
+  render(
+    <NovaMessage
+      message={message}
+      question="Qu’y a-t-il dans un trou noir ?"
+      locale="fr"
+      special={special}
+      arrivalPhase={undefined}
+      guess={{ revealed: true, guess: null }}
+      isLast
+      now={Date.now()}
+      speech={{ supported: false, speakingId: null, toggle: () => undefined, stop: () => undefined }}
+      canTravel={() => true}
+      onTravel={() => undefined}
+      onReveal={() => undefined}
+      onRetry={null}
+    />,
+  );
 }
 
 async function ask(question: string) {
@@ -142,6 +175,26 @@ describe('Nova', () => {
       expect(links).toHaveLength(2);
       expect(links[1]).toHaveAttribute('href', 'https://ssd.jpl.nasa.gov/');
       expect(links[1]).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+  });
+
+  describe('garder une question comme mystère', () => {
+    it.each(['unknown', 'debated'] as const)('le permet pour le statut %s', (status) => {
+      renderNovaMessage(status);
+      const keepButton = screen.getByRole('button', { name: /Garder ce mystère/ });
+      fireEvent.click(keepButton);
+      expect(useCosmosStore.getState().mysteries).toHaveLength(1);
+      expect(useCosmosStore.getState().mysteries[0]?.question).toBe('Qu’y a-t-il dans un trou noir ?');
+    });
+
+    it('ne le propose pas pour une réponse vérifiée', () => {
+      renderNovaMessage('verified');
+      expect(screen.queryByRole('button', { name: /Garder ce mystère/ })).not.toBeInTheDocument();
+    });
+
+    it.each(['off-topic', 'privacy', 'safety', 'error'] as const)('ne le propose pas pour un refus %s', (special) => {
+      renderNovaMessage(undefined, special);
+      expect(screen.queryByRole('button', { name: /Garder ce mystère/ })).not.toBeInTheDocument();
     });
   });
 
