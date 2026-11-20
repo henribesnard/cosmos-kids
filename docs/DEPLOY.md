@@ -100,28 +100,53 @@ Subsequent deployments use the script.
 
 ## Caddy and Cloudflare
 
-The site is behind Cloudflare. The Caddy block for `/api/nova` restricts access to Cloudflare edge IPs only, and forwards the real client IP via `Cf-Connecting-Ip`:
+The site is behind Cloudflare. The Caddy block has three `handle` sections:
 
 ```caddyfile
-handle /api/nova {
-    @not_cloudflare not remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
-    respond @not_cloudflare 403
-
-    request_body {
-        max_size 16KB
+<domain> {
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Frame-Options "DENY"
     }
-    reverse_proxy 127.0.0.1:3001 {
-        flush_interval -1
-        header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}
+
+    # Nova API — Cloudflare-only
+    handle /api/nova {
+        @not_cloudflare not remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+        respond @not_cloudflare 403
+
+        request_body {
+            max_size 16KB
+        }
+        reverse_proxy 127.0.0.1:3001 {
+            flush_interval -1
+            header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}
+        }
+    }
+
+    # Hashed assets — immutable cache, NO try_files (missing file = 404)
+    handle /assets/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        root * /var/www/cosmoskids/current
+        encode zstd gzip
+        file_server
+    }
+
+    # SPA routes — try_files fallback to index.html
+    handle {
+        header Cache-Control "no-cache"
+        root * /var/www/cosmoskids/current
+        encode zstd gzip
+        try_files {path} /index.html
+        file_server
     }
 }
 ```
 
-This prevents:
-- Direct-to-VPS requests bypassing Cloudflare (blocked with 403)
-- Spoofed `X-Forwarded-For` or `Cf-Connecting-Ip` headers from non-Cloudflare sources
-
-The Cloudflare IP ranges come from https://www.cloudflare.com/ips/. **Re-check periodically** (Cloudflare occasionally adds new ranges). If a new range is added and the Caddyfile is not updated, requests routed through that edge will get 403.
+Key design:
+- `/assets/*` uses `file_server` only (no `try_files`). A missing hashed asset returns a real 404, never `index.html`. This prevents cache poisoning: without this, `try_files` would serve `index.html` as a JS/CSS file with `Cache-Control: immutable`, polluting the CDN cache for a year.
+- `/api/nova` only accepts requests from Cloudflare edge IPs (`@not_cloudflare` matcher). This prevents direct-to-VPS requests that could forge the `Cf-Connecting-Ip` header to bypass rate limiting.
+- The Cloudflare IP ranges come from https://www.cloudflare.com/ips/. **Re-check periodically** — if Cloudflare adds new ranges, requests through those edges will get 403 until the Caddyfile is updated.
 
 ## Deploy (script)
 
@@ -136,7 +161,8 @@ The script:
 4. Switches the Nova server symlink, restarts the service, checks `/health` locally
 5. Switches the static site symlink
 6. Verifies via the public domain: `https://<DOMAIN>/` (200), `https://<DOMAIN>/trajets/earth-to-moon` (200), `POST https://<DOMAIN>/api/nova` with `{}` (400)
-7. On any check failure: automatic rollback to the saved targets
+7. Downloads `index.html`, extracts `/assets/*.js` and `/assets/*.css` references, and verifies each returns 200 with the correct `Content-Type` (prevents serving `index.html` as JS/CSS)
+8. On any check failure: automatic rollback to the saved targets
 8. Lists existing versions and their sizes
 
 ### --prune N

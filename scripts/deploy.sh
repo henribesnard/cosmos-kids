@@ -207,6 +207,32 @@ else
   rollback
 fi
 
+info "Checking that assets referenced in index.html are served correctly"
+INDEX_HTML=$(curl -sf "https://$DOMAIN/" 2>/dev/null || true)
+ASSET_PATHS=$(echo "$INDEX_HTML" | grep -oE '/assets/[^"'"'"' ]+\.(js|css)' | sort -u)
+ASSET_FAIL=0
+for asset in $ASSET_PATHS; do
+  RESP=$(curl -sf -o /dev/null -w '%{http_code} %{content_type}' "https://$DOMAIN$asset" 2>/dev/null || echo "000 ")
+  HTTP_CODE="${RESP%% *}"
+  CTYPE="${RESP#* }"
+  if [ "$HTTP_CODE" != "200" ]; then
+    echo "  FAIL: $asset returned $HTTP_CODE (expected 200)"
+    ASSET_FAIL=1
+  elif echo "$asset" | grep -q '\.js$' && ! echo "$CTYPE" | grep -q 'javascript'; then
+    echo "  FAIL: $asset has Content-Type $CTYPE (expected javascript)"
+    ASSET_FAIL=1
+  elif echo "$asset" | grep -q '\.css$' && ! echo "$CTYPE" | grep -q 'text/css'; then
+    echo "  FAIL: $asset has Content-Type $CTYPE (expected text/css)"
+    ASSET_FAIL=1
+  else
+    info "  OK: $asset ($HTTP_CODE, $CTYPE)"
+  fi
+done
+if [ "$ASSET_FAIL" = "1" ]; then
+  echo "Asset integrity check failed — assets are missing or served with wrong Content-Type"
+  rollback
+fi
+
 # ------------------------------------------------------------------
 #  Step 6: Version listing / optional prune
 # ------------------------------------------------------------------
