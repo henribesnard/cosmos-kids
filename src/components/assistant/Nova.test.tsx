@@ -194,13 +194,18 @@ describe('Nova', () => {
       try {
         await ask('Combien de lunes a Saturne ?');
         expect(await screen.findByText(/Je lis bien ta question|Je regarde dans mon carnet de bord/)).toBeInTheDocument();
-        expect(scrollTo).toHaveBeenCalledTimes(1);
-        expect(scrollTo).toHaveBeenNthCalledWith(1, { top: 140, behavior: 'auto' });
+        await waitFor(() => {
+          expect(scrollTo).toHaveBeenCalledTimes(1);
+          expect(scrollTo).toHaveBeenNthCalledWith(1, { top: 140, behavior: 'auto' });
+          expect(log.scrollTop).toBe(140);
+        });
 
         expect(await screen.findByRole('button', { name: /^Vérifié/ }, ANSWER_TIMEOUT)).toBeInTheDocument();
-        expect(scrollTo).toHaveBeenCalledTimes(2);
-        expect(scrollTo).toHaveBeenNthCalledWith(2, { top: 260, behavior: 'auto' });
-        expect(log.scrollTop).toBe(260);
+        await waitFor(() => {
+          expect(scrollTo).toHaveBeenCalledTimes(2);
+          expect(scrollTo).toHaveBeenNthCalledWith(2, { top: 260, behavior: 'auto' });
+          expect(log.scrollTop).toBe(260);
+        });
         expect(log.lastElementChild?.getBoundingClientRect().top).toBe(log.getBoundingClientRect().top);
         expect(shell.scrollTop).toBe(0);
         expect((document.scrollingElement ?? document.documentElement).scrollTop).toBe(0);
