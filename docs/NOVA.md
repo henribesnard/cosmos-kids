@@ -10,7 +10,7 @@ Client (React)                    Server (Node.js)
 | useAssistant()  | -- SSE/POST ->| POST /api/nova                       |
 |   or            |               |   handler.ts                         |
 | useMockAssistant|               |     1. validateRequest()             |
-+-----------------+               |     2. containsPersonalInfo()        |
++-----------------+               |     2. analyzePersonalInfo()         |
                                   |     3. classifyQuestion() ──┐        |
                                   |     4. searchCatalog()   ───┤parallel|
                                   |     5. searchWeb() (Exa) ───┘        |
@@ -35,7 +35,10 @@ Client (React)                    Server (Node.js)
 | `server/nova/handler.ts` | Main pipeline handler + SourceRegistry |
 | `server/nova/provider.ts` | LLM provider abstraction (Mistral impl) |
 | `server/nova/webSearch.ts` | Exa Search + SearchProvider interface |
-| `server/nova/validation.ts` | Input validation + privacy detection |
+| `server/nova/validation.ts` | Input validation + privacy detection (natural phrasings, first-name masking) |
+| `server/nova/plainText.ts` | Plain-text rule: strips Markdown from every child-facing string |
+| `server/nova/travelActions.ts` | Deterministic travel actions (proper names only) |
+| `src/assistant/assistantShared.ts` | Context (shared reading level), network status, Retry-After parsing |
 | `server/nova/catalogSearch.ts` | Searches app's internal celestial data |
 | `server/nova/allowedDomains.ts` | 13-domain whitelist for web sources |
 | `server/nova/rateLimit.ts` | In-memory sliding-window rate limiter |
@@ -47,16 +50,20 @@ Client (React)                    Server (Node.js)
 
 The pipeline ensures **no unverified text reaches the child**:
 
-1. **Privacy detection** (regex, no LLM) — catches names, addresses, phone numbers, emails, school names
+1. **Privacy detection** (regex, no LLM) — two levels (lot 2):
+   - `personal` → refusal with the privacy reminder, nothing sent to the provider: full name (« je m'appelle Jean Dupont », "my name is John Smith"), place of residence (« j'habite à/au/en… », "I live in/at…"), school or class with a place (« mon école… », « je suis en CE2 à… », "I'm in 4th grade at…"), street address, phone, e-mail.
+   - `first-name` → a first name alone (« je m'appelle Léo, pourquoi… », "my name is Sam, why…"): the name is replaced by `[prénom]` in the question **and in the history** before anything reaches the provider, the cache key uses the masked question, the question is answered normally and the message carries `privacyNote` (short reminder).
+   - False positives avoided: « la Lune s'appelle aussi Séléné », « j'habite sur Terre », "I live on Earth", « comment s'appelle… », « je suis en CE2 et… ». 20 fr/en cases in `validation.test.ts`.
 2. **Classification + catalog search + web search** (parallel) — classification via small model (includes `openQuestion` detection); catalog search via local keyword matching; web search via Exa (optional)
 3. **Source Registry** (closed) — only sources created by the server (catalog entries, web pages) are accepted. The LLM cannot invent sources.
 4. **Drafting** (small model, JSON mode) — generates claims with source IDs from the registry. Source IDs not in the registry are silently dropped. Each claim MUST cite a sourceId.
 5. **Extract-based verification** (small model, JSON mode) — each claim is checked against real source extracts. The verifier returns `supportingSourceIds` per claim and is explicitly told: "Use ONLY the provided extracts. Do NOT use your own knowledge."
 6. **Source attribution merge** — draft sourceIds + verifier supportingSourceIds are merged. No fallback to all sources.
-7. **Unsupported claims are dropped** — if all claims are unsupported, a fallback "I couldn't verify this" response is shown with status `'unknown'`
+7. **Unsupported claims are dropped** — and (lot 2) so is any `verified`/`debated` claim left with **no registry source** after the merge (`applyVerdicts`, exported and tested). If no claim remains, a fallback "I couldn't verify this" response is shown with status `'unknown'`.
 8. **Open question override** — if the classifier flagged `openQuestion: true`, status can never be `'verified'` (capped at `'debated'`)
 9. **Text assembly** (small model) — final text is generated from retained claims only, not from the original draft. No new facts can be introduced. Open questions get a caveat prefix.
-10. **Action whitelist** — `travel` actions only allowed for known destination IDs
+10. **Plain text** (lot 2) — the assembly prompt asks for plain text and `toPlainText()` cleans the text, claims, follow-ups, guess choices and action labels on the server (emphasis, headings, lists, links, code, HTML). The interface renders text as is: no asterisk reaches the child (only the official name "Sagittarius A*" keeps its star).
+11. **Action whitelist** — `travel` actions only for known destination IDs, and (lot 2) only when the object is **named in the question** or is the **catalog source of a retained claim**. Aliases are full names, entry ids and distinctive proper nouns only: everyday words ("large", "grand", "cloud", "nuage", "station", "eagle"…) never identify an object. Model-proposed actions follow the same rule.
 
 ### Key invariants
 
@@ -66,6 +73,9 @@ The pipeline ensures **no unverified text reaches the child**:
 - **Text from claims only**: The final text is assembled from verified claims, never from the raw draft.
 - **Refusal = no status**: Off-topic, privacy, safety, and error responses have no `status` field — they never show a "Verified" badge.
 - **Open question cap**: Questions classified as `openQuestion` can never reach `'verified'` status, even if individual claims are supported.
+- **No seal without a source** (lot 2): every claim shown as `verified` or `debated` has at least one source from the closed registry.
+- **"debated" means a real scientific debate** (lot 2): values that agree once rounded or converted, quantities that naturally vary (an orbit's altitude), planned future dates and extracts that simply do not mention a claim are not debates (see the ISS diagnosis below).
+- **Guess choices are hypotheses**: `guessChoices` never go through verification, are never shown as facts and are never marked right or wrong; only the verified answer revealed afterwards says what is correct.
 - **supportingSourceIds**: The verifier identifies which sources actually support each claim, ensuring correct attribution even when the draft model fails to cite sourceIds.
 
 ## Allowed Domains (web search)
@@ -105,18 +115,34 @@ data: {"type":"result","message":{...},"remainingQuestions":19}
 data: [DONE]
 ```
 
-Phases: `checking` | `searching-catalog` | `searching-web` | `verifying` | `done` | `error`
+Phases sent by the server: `checking` | `searching-catalog` | `searching-web` | `verifying` | `done` | `error`.
+The client adds `rate-limited` (HTTP 429) and `offline` (see below).
+
+## Contract changes (lot 2, `src/assistant/types.ts`)
+
+All backward compatible (optional fields, new union values):
+
+| Change | Meaning |
+|--------|---------|
+| `kind: 'rate-limited'` | Answer to an HTTP 429 (built by the hook) |
+| `retryAfterSeconds?: number` | Real delay before the next question (from `Retry-After`) |
+| `guessChoices?: readonly string[]` | 2–3 short hypotheses when `guessFirst` is true — never verified, never facts |
+| `privacyNote?: string` | Short reminder when a first name alone was given (and masked) |
+| `readingLevel` / `setReadingLevel` | Now read from / written to the persisted store (shared with the InfoPanel) |
+
+The `offline` phase already existed in the union; it is now **emitted by the hook** (single source of truth): `navigator.onLine === false`, or a request that failed for a network reason (`TypeError` from `fetch`). The hook leaves it on the browser's `online` event; "Réessayer" also retries. The interface no longer reads `navigator.onLine` itself.
 
 ## Rate Limiting
 
 - In-memory sliding window, per IP
 - Default: 20 questions per hour per IP
 - Configurable via `NOVA_MAX_QUESTIONS_PER_HOUR`
-- Returns HTTP 429 with `Retry-After` header
+- Returns HTTP 429 with the **real** delay: `Retry-After: <seconds>` header and JSON body `{"error":"Rate limit exceeded","retryAfterSeconds":<seconds>}` (time until the oldest question leaves the 1-hour window, ≥ 1 s)
+- The hook reads `Retry-After` (seconds or HTTP date), then the body, then falls back to 60 s; the message gets `kind: 'rate-limited'` + `retryAfterSeconds`, and the interface shows the "Nova recharge ses panneaux solaires" countdown for that duration (instead of a fixed 60 s)
 
 ## Response Cache
 
-- In-memory LRU, keyed by `question + locale + readingLevel`
+- In-memory LRU, keyed by `masked question + locale + readingLevel` (a first name never reaches the cache; `privacyNote` is added per request)
 - TTL: 10 minutes
 - Max entries: 500
 - Cached responses skip all LLM calls
@@ -164,13 +190,41 @@ Test run on 2026-11-18 against `mistral-small-latest` (all steps), Exa Search en
 - **Run 2 (cached)** returns identical results in < 5ms per question
 - **Exa web search** provides rich page text from allowed domains, eliminating the data gaps that caused `unknown` in catalog-only mode
 
+## Lot 2 — ISS diagnosis (19 November 2026)
+
+"What is the International Space Station?" came out `debated`. Reproduced with `NOVA_DEBUG=1` (logs claims, verdicts with reasons, and the raw draft):
+
+- claim "The ISS orbits Earth at an altitude of about 420 km and travels at 7.8 km/s" → `debated`, reason: *"conflicting altitude and speed values: 420 km and 7.8 km/s vs 250 miles (~402 km) and 17,500 mph (~7.82 km/s) vs 400 km and 28,000 km/h"* — the same values, rounded or converted;
+- claim "one orbit every 90 minutes" → `debated`, reason: one extract *"does not mention the orbital period"*.
+
+The verifier used `debated` for rounding differences and missing mentions. The verification prompt (FR/EN) now reserves `debated` for an explicit scientific disagreement or unresolved question, and lists what is **not** a debate: rounded/converted values, naturally varying quantities, planned future dates or events (a plan, not a debate), extracts that do not mention the claim. After the fix the same question returns `verified` (4 claims, nasa.gov). The same run also showed the false travel action `lmc` ("a **large** spacecraft" → alias "large" of *Large Magellanic Cloud*), fixed in `travelActions.ts`.
+
+A second issue surfaced during the lot 2 real test: « Devine : combien de temps… » returned `guessChoices` but **no claims** (the model "kept the suspense") and a follow-up containing an unverified number. The draft prompt now requires the full answer in claims even when `guessFirst` is true, and follow-ups to be questions only.
+
+## Lot 2 real test (19 November 2026)
+
+`mistral-small-latest` (all steps), Exa enabled, full pipeline, fresh process per question (no cache).
+
+| # | Question | Level | Status | Claims (all sourced) | Actions | Guess choices | Privacy note | `*` | Latency |
+|---|----------|-------|--------|----------------------|---------|---------------|--------------|-----|---------|
+| 1 | What is the International Space Station? | curious | verified | 4 | iss | — | — | 0 | 6.4 s |
+| 2 | Combien de lunes a Saturne ? | simple | verified | 2 | saturn | — | — | 0 | 4.6 s |
+| 3 | Je m'appelle Léo, pourquoi Mars est rouge ? | simple | verified | 2 | mars | — | yes | 0 | 4.8 s |
+| 4 | Qu'y a-t-il dans un trou noir ? | simple | debated (open question) | 2 | sgr-a | — | — | 0 (« Sagittarius A* » kept) | 5.0 s |
+| 5 | How far is the Moon from Earth? | expert | verified | 3 | moon, earth | 3 | — | 0 | 5.6 s |
+
+Bonus: « Devine : combien de temps faut-il à la lumière du Soleil pour arriver sur Terre ? » → verified, 3 guess choices, 3.5–3.9 s (two runs).
+
+Note for cloud sandboxes: Node's built-in `fetch` ignores `HTTPS_PROXY`; run scripts with `NODE_USE_ENV_PROXY=1` (Node ≥ 22.21) when outbound traffic goes through a proxy.
+
 ## Known Limitations
 
 1. **Rate limiter is in-memory**: resets on server restart. For production with multiple instances, replace with Redis.
 2. **No streaming of answer text**: the full verified answer is sent as a single block after verification completes.
 3. **Web search requires separate API key**: Exa API key is optional. Without it, Nova relies on catalog data only.
 4. **Open science questions**: Questions about topics unknown to science return `'debated'` or `'unknown'` — this is by design, not a bug.
-5. **ISS sometimes debated**: The verifier occasionally marks well-known ISS facts as `debated` — this is a minor LLM judgment variance.
+5. **Verifier judgment**: the `debated` misuse seen on the ISS is addressed by the prompt (see above), but the verifier remains a small model; `NOVA_DEBUG=1` logs its reasons to diagnose any new case.
+6. **Guess first is the model's choice**: `guessFirst` / `guessChoices` depend on the draft model; in the real test it set them for 1 question out of 5 (plus the explicit « Devine » bonus).
 
 ## Estimated Cost per Question
 
@@ -247,9 +301,14 @@ For UI development without a Mistral API key:
 VITE_NOVA_MOCK=1 npm run dev
 ```
 
-Or add `?nova-mock` to the URL. The mock provides all scenarios:
+Or add `?nova=mock` to the URL. The mock provides all scenarios:
 - Verified answers (Saturn moons, default)
-- Debated topics (black holes)
-- Unknown topics (extraterrestrial life)
+- Debated topics (black holes) — `guessFirst` + `guessChoices`
+- Unknown topics (extraterrestrial life) — `guessFirst` + `guessChoices`
+- « Combien de lunes a Jupiter ? » — verified + `guessChoices` (simple-level big buttons)
 - Off-topic, privacy, safety detection
-- Rate limiting and error simulation
+- « Je m'appelle Léo, … » / "My name is Sam, …" — normal answer + `privacyNote`
+- « trop de questions » / "rate limit" — `kind: 'rate-limited'` with `retryAfterSeconds: 42`
+- « hors ligne » / "offline" — simulated network failure → phase `offline` (the real `navigator.onLine` is followed too)
+- « erreur » / "error" — error simulation
+- Reading level read from / written to the shared store, like the real hook

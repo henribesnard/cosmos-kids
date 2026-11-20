@@ -21,24 +21,52 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Online / offline                                                   */
+/*  Panel size (compact / wide / full) — remembered for the session    */
 /* ------------------------------------------------------------------ */
 
-function subscribeOnline(notify: () => void) {
-  window.addEventListener('online', notify);
-  window.addEventListener('offline', notify);
-  return () => {
-    window.removeEventListener('online', notify);
-    window.removeEventListener('offline', notify);
-  };
+export type NovaSize = 'compact' | 'wide' | 'full';
+export const NOVA_SIZE_STORAGE_KEY = 'cosmos-kids-nova-size';
+
+function isNovaSize(value: unknown): value is NovaSize {
+  return value === 'compact' || value === 'wide' || value === 'full';
 }
 
-export function useOnline(): boolean {
-  return useSyncExternalStore(
-    subscribeOnline,
-    () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false),
-    () => true,
-  );
+function readStoredSize(): { size: NovaSize; previous: NovaSize } {
+  try {
+    const raw = JSON.parse(window.sessionStorage.getItem(NOVA_SIZE_STORAGE_KEY) ?? 'null') as unknown;
+    if (raw && typeof raw === 'object') {
+      const { size, previous } = raw as { size?: unknown; previous?: unknown };
+      if (isNovaSize(size)) return { size, previous: isNovaSize(previous) ? previous : 'compact' };
+    }
+  } catch {
+    // Blocked storage or corrupted value: default size.
+  }
+  return { size: 'compact', previous: 'compact' };
+}
+
+export interface NovaSizeState {
+  readonly size: NovaSize;
+  /** Size before the last change (Escape in full screen goes back to it). */
+  readonly previous: NovaSize;
+  setSize(size: NovaSize): void;
+}
+
+/** Nova's panel size, kept in sessionStorage (this visit only). */
+export function useNovaSize(): NovaSizeState {
+  const [state, setState] = useState(readStoredSize);
+  const setSize = useCallback((size: NovaSize) => {
+    setState((current) => {
+      if (current.size === size) return current;
+      const next = { size, previous: current.size };
+      try {
+        window.sessionStorage.setItem(NOVA_SIZE_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Private mode: the size simply is not remembered.
+      }
+      return next;
+    });
+  }, []);
+  return { size: state.size, previous: state.previous, setSize };
 }
 
 /* ------------------------------------------------------------------ */

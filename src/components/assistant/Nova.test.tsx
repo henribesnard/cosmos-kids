@@ -5,11 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AssistantMessage } from '../../assistant/types';
 import { useCosmosStore } from '../../store';
 import { DiscoveryLog } from '../DiscoveryLog';
+import { InfoPanel } from '../InfoPanel';
+import type { ObjectDisplay } from '../../app/uiTypes';
 import { NovaDock } from './NovaDock';
 import { NovaMessage } from './NovaMessage';
 import NovaPanel from './NovaPanel';
 import { TruthSeal } from './TruthSeal';
-import { NOVA_MET_STORAGE_KEY } from './novaHooks';
+import { NOVA_MET_STORAGE_KEY, NOVA_SIZE_STORAGE_KEY } from './novaHooks';
+import { formatDuration } from './novaText';
+import { rechargeLeftSeconds, STILL_WORKING_AFTER_S } from './novaUtils';
 
 const ANSWER_TIMEOUT = { timeout: 6000 };
 vi.setConfig({ testTimeout: 12_000 });
@@ -143,10 +147,13 @@ describe('Nova', () => {
   });
 
   describe('scroll de la conversation', () => {
-    it('réserve un dégagement sous les actions de fin de réponse', () => {
+    it('réserve un dégagement sous les actions de fin de réponse, dans la liste qui défile', () => {
       const { container } = renderPanel();
       const scroll = container.querySelector('.nova-panel__scroll');
-      expect(scroll).toHaveStyle({ paddingBottom: '144px', scrollPaddingBottom: '144px' });
+      // Lot 2: no more 144px dead zone on the outer container (it shrank the reading area).
+      expect(scroll).toHaveStyle({ paddingBottom: '12px' });
+      const css = Array.from(document.querySelectorAll('style')).map((style) => style.textContent ?? '').join('\n');
+      expect(css).toMatch(/\.nova-log:not\(:empty\) \{ padding-bottom: 24px/);
     });
 
     it('défile uniquement la liste à chaque nouveau message', async () => {
@@ -187,13 +194,18 @@ describe('Nova', () => {
       try {
         await ask('Combien de lunes a Saturne ?');
         expect(await screen.findByText(/Je lis bien ta question|Je regarde dans mon carnet de bord/)).toBeInTheDocument();
-        expect(scrollTo).toHaveBeenCalledTimes(1);
-        expect(scrollTo).toHaveBeenNthCalledWith(1, { top: 140, behavior: 'auto' });
+        await waitFor(() => {
+          expect(scrollTo).toHaveBeenCalledTimes(1);
+          expect(scrollTo).toHaveBeenNthCalledWith(1, { top: 140, behavior: 'auto' });
+          expect(log.scrollTop).toBe(140);
+        });
 
         expect(await screen.findByRole('button', { name: /^Vérifié/ }, ANSWER_TIMEOUT)).toBeInTheDocument();
-        expect(scrollTo).toHaveBeenCalledTimes(2);
-        expect(scrollTo).toHaveBeenNthCalledWith(2, { top: 260, behavior: 'auto' });
-        expect(log.scrollTop).toBe(260);
+        await waitFor(() => {
+          expect(scrollTo).toHaveBeenCalledTimes(2);
+          expect(scrollTo).toHaveBeenNthCalledWith(2, { top: 260, behavior: 'auto' });
+          expect(log.scrollTop).toBe(260);
+        });
         expect(log.lastElementChild?.getBoundingClientRect().top).toBe(log.getBoundingClientRect().top);
         expect(shell.scrollTop).toBe(0);
         expect((document.scrollingElement ?? document.documentElement).scrollTop).toBe(0);
@@ -360,6 +372,191 @@ describe('Nova', () => {
       fireEvent.click(screen.getByRole('button', { name: /Retirer le mystère/ }));
       expect(useCosmosStore.getState().mysteries).toHaveLength(0);
       expect(screen.getByText(/Aucun mystère pour l’instant/)).toBeInTheDocument();
+    });
+  });
+
+  describe('lot 2', () => {
+    const MARS: ObjectDisplay = {
+      id: 'mars',
+      name: { fr: 'Mars', en: 'Mars' },
+      kind: { fr: 'Planète', en: 'Planet' },
+      tagline: { fr: 'La planète rouge', en: 'The red planet' },
+      description: { fr: 'Texte simple', en: 'Simple text' },
+      curious: { fr: 'Texte curieux', en: 'Curious text' },
+      expert: { fr: 'Texte expert', en: 'Expert text' },
+      color: '#c1440e',
+      symbol: '♂',
+      facts: [],
+    };
+
+    beforeEach(() => {
+      window.sessionStorage.clear();
+    });
+
+    it('1 — remplace les 60 s fixes par le délai réel du serveur', async () => {
+      renderPanel();
+      await ask('trop de questions');
+      expect(await screen.findByText('Nova recharge ses panneaux solaires', {}, ANSWER_TIMEOUT)).toBeInTheDocument();
+      expect(screen.getAllByText(/Nova recharge ses panneaux solaires… encore 4\d\s*s/).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
+    });
+
+    it('1 — calcule le compte à rebours à partir de retryAfterSeconds', () => {
+      const message: AssistantMessage = { id: 'r', role: 'nova', text: '', createdAt: 1_000_000, kind: 'rate-limited', retryAfterSeconds: 1800 };
+      expect(rechargeLeftSeconds(message, 1_000_000)).toBe(1800);
+      expect(rechargeLeftSeconds(message, 1_000_000 + 600_000)).toBe(1200);
+      expect(rechargeLeftSeconds(message, 1_000_000 + 1_900_000)).toBe(0);
+      const legacy: AssistantMessage = { id: 'l', role: 'nova', text: '', createdAt: 0, kind: 'rate-limited' };
+      expect(rechargeLeftSeconds(legacy, 0)).toBe(60);
+      expect(formatDuration(42)).toBe('42 s');
+      expect(formatDuration(1200)).toBe('20 min 00 s');
+      expect(formatDuration(3600)).toBe('1 h 00 min');
+    });
+
+    it('2 — la phase offline vient du hook : bannière, envoi bloqué, puis retour du signal', async () => {
+      const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+      try {
+        renderPanel();
+        act(() => {
+          window.dispatchEvent(new Event('offline'));
+        });
+        expect(screen.getByText(/Pas de connexion/)).toBeInTheDocument();
+        onLine.mockReturnValue(true);
+        act(() => {
+          window.dispatchEvent(new Event('online'));
+        });
+        expect(screen.queryByText(/Pas de connexion/)).not.toBeInTheDocument();
+      } finally {
+        onLine.mockRestore();
+      }
+    });
+
+    it('2 — une coupure réseau pendant la requête passe en offline avec « Réessayer »', async () => {
+      renderPanel();
+      await ask('hors ligne');
+      expect(await screen.findByRole('button', { name: /Réessayer/ }, ANSWER_TIMEOUT)).toBeInTheDocument();
+      expect(screen.getByText('Pas de signal')).toBeInTheDocument();
+      expect(screen.getByText(/Pas de connexion/)).toBeInTheDocument();
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(screen.queryByText(/Pas de connexion/)).not.toBeInTheDocument();
+    });
+
+    it('3 — niveau simple : les hypothèses en gros boutons, sans les présenter comme des faits', async () => {
+      useCosmosStore.getState().setReadingLevel('simple');
+      renderPanel();
+      await ask("Qu'y a-t-il dans un trou noir ?");
+      const group = await screen.findByRole('group', { name: 'Choisis ton hypothèse' }, ANSWER_TIMEOUT);
+      expect(within(group).getAllByRole('button')).toHaveLength(3);
+      expect(screen.queryByLabelText('Ton hypothèse')).not.toBeInTheDocument();
+      expect(screen.getByText(/des idées, pas encore des réponses/)).toBeInTheDocument();
+      expect(screen.queryByText('Débattu')).not.toBeInTheDocument();
+      fireEvent.click(within(group).getByRole('button', { name: 'Un point super dense' }));
+      expect(screen.getByText(/Ton hypothèse.*Un point super dense/)).toBeInTheDocument();
+      expect(screen.getByText(/Compare avec ce que disent les scientifiques/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Débattu/ })).toBeInTheDocument();
+    });
+
+    it('3 — autres niveaux : le champ libre reste, les idées en petits boutons', async () => {
+      useCosmosStore.getState().setReadingLevel('expert');
+      renderPanel();
+      await ask("Qu'y a-t-il dans un trou noir ?");
+      expect(await screen.findByLabelText('Ton hypothèse', {}, ANSWER_TIMEOUT)).toBeInTheDocument();
+      const mini = screen.getByRole('group', { name: /Ou choisis une idée/ });
+      expect(within(mini).getAllByRole('button')).toHaveLength(3);
+    });
+
+    it('4 — Nova et l’InfoPanel partagent le même niveau de lecture', () => {
+      render(
+        <MemoryRouter>
+          <NovaPanel locale="fr" open reducedMotion onClose={vi.fn()} canTravel={() => false} onTravel={vi.fn()} onOpenParents={vi.fn()} />
+          <InfoPanel locale="fr" object={MARS} onCompare={vi.fn()} onClose={vi.fn()} />
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByRole('radio', { name: 'Expert' }));
+      expect(screen.getByRole('tab', { name: 'Expert' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('Texte expert')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('tab', { name: 'Simple' }));
+      expect(screen.getByRole('radio', { name: 'Simple' })).toHaveAttribute('aria-checked', 'true');
+      expect(useCosmosStore.getState().readingLevel).toBe('simple');
+    });
+
+    it('5 — un prénom seul : réponse normale avec un bref rappel', async () => {
+      renderPanel();
+      await ask('Je m’appelle Léo, combien y a-t-il de galaxies ?');
+      expect(await screen.findByText(/garde ton prénom pour toi/, {}, ANSWER_TIMEOUT)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Vérifié/ })).toBeInTheDocument();
+    });
+
+    it('8 — le message de patience est calibré sur la latence réelle (10 s)', () => {
+      expect(STILL_WORKING_AFTER_S).toBe(10);
+    });
+
+    it('9 — Agrandir : compact → large → plein écran, Échap revient et rend le focus', () => {
+      renderPanel();
+      const button = screen.getByRole('button', { name: 'Agrandir Nova' });
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(button);
+      const panel = screen.getByRole('complementary', { name: 'Nova' });
+      expect(panel).toHaveClass('nova-panel--wide');
+      expect(button).toHaveAttribute('aria-expanded', 'true');
+      expect(button).toHaveAccessibleName('Passer Nova en plein écran');
+
+      fireEvent.click(button);
+      const dialog = screen.getByRole('dialog', { name: 'Nova' });
+      expect(dialog).toHaveClass('nova-panel--full');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(button).toHaveAccessibleName('Réduire Nova');
+      expect(document.querySelector('.nova-veil')).not.toBeNull();
+      expect(JSON.parse(window.sessionStorage.getItem(NOVA_SIZE_STORAGE_KEY) ?? '{}')).toMatchObject({ size: 'full', previous: 'wide' });
+
+      // Focus trap: Tab from the last focusable goes back to the first one.
+      const focusables = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), textarea'));
+      focusables.at(-1)!.focus();
+      fireEvent.keyDown(dialog, { key: 'Tab' });
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      expect(screen.getByRole('complementary', { name: 'Nova' })).toHaveClass('nova-panel--wide');
+      expect(screen.getByRole('button', { name: 'Passer Nova en plein écran' })).toHaveFocus();
+    });
+
+    it('9 — la taille choisie est mémorisée pour la session', () => {
+      window.sessionStorage.setItem(NOVA_SIZE_STORAGE_KEY, JSON.stringify({ size: 'wide', previous: 'compact' }));
+      renderPanel();
+      expect(screen.getByRole('complementary', { name: 'Nova' })).toHaveClass('nova-panel--wide');
+    });
+
+    it('9 — en anglais, libellés traduits', () => {
+      act(() => useCosmosStore.getState().setLocale('en'));
+      renderPanel({ locale: 'en' });
+      expect(screen.getByRole('button', { name: 'Enlarge Nova' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('9 — sur tablette/mobile, le même bouton monte la feuille en pleine hauteur', () => {
+      const original = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('max-width: 1023px'),
+        media: query,
+        onchange: null,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList) as typeof window.matchMedia;
+      try {
+        renderPanel();
+        const button = screen.getByRole('button', { name: 'Agrandir Nova en plein écran' });
+        fireEvent.click(button);
+        expect(screen.getByRole('dialog', { name: 'Nova' })).toHaveClass('nova-panel--full');
+        expect(button).toHaveAccessibleName('Réduire Nova');
+        fireEvent.keyDown(screen.getByRole('dialog', { name: 'Nova' }), { key: 'Escape' });
+        expect(screen.getByRole('dialog', { name: 'Nova' })).toHaveClass('nova-panel--compact');
+      } finally {
+        window.matchMedia = original;
+      }
     });
   });
 });

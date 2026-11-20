@@ -3,7 +3,7 @@ import { SOLAR_SYSTEM_BODIES } from '../../data/solarSystem';
 import type { Locale } from '../../data/types';
 import { NovaAvatar } from './NovaAvatar';
 import { JOURNEY_PHASES, NOVA_TEXT, type JourneyPhase } from './novaText';
-import { moodForPhase } from './novaUtils';
+import { moodForPhase, STILL_WORKING_AFTER_S } from './novaUtils';
 
 interface VerificationJourneyProps {
   readonly phase: JourneyPhase;
@@ -20,10 +20,9 @@ const STAR_SPOTS: readonly { x: number; y: number }[] = [
 const FACTS = SOLAR_SYSTEM_BODIES.map((body) => body.funFact);
 const FACT_EVERY_S = 6;
 const STAR_EVERY_S = 2;
-const STILL_WORKING_AFTER_S = 12;
 
 /**
- * Turns the 5–90 s wait into a small game: a probe travels along four
+ * Turns the wait (5–7 s in practice, sometimes more) into a small game: a probe travels along four
  * stations (question → logbook → agencies → double check), a "did you know"
  * card rotates verified facts from the app catalogue, and the child can catch
  * shooting stars. Only the station label is announced (aria-live).

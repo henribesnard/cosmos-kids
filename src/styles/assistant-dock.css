@@ -92,6 +92,10 @@
   :root { --nova-panel-w: 352px; --nova-gap: 12px; }
   .app-shell--nova-open .info-panel { width: 300px; }
 }
+/* Lot 2 — wide Nova (≈60 % of the window, max 880 px): the card slides further left. */
+@media (min-width: 1024px) {
+  .app-shell:has(.nova-panel--wide:not([hidden])) { --nova-panel-w: min(60vw, 880px); }
+}
 
 /* ---------- Tablet & mobile ---------- */
 @media (min-width: 1024px) {

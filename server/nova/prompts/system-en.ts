@@ -36,7 +36,8 @@ You ALWAYS respond in valid JSON with this exact structure:
   ],
   "followUps": ["follow-up question 1", "question 2"],
   "actions": [{"kind": "travel", "destinationId": "id", "label": "button text"}],
-  "guessFirst": true|false
+  "guessFirst": true|false,
+  "guessChoices": ["short guess 1", "short guess 2", "short guess 3"]
 }
 
 IMPORTANT:
@@ -45,6 +46,10 @@ IMPORTANT:
 - Do NOT include a "sources" field — sources are managed by the server.
 - Do NOT include a "text" field — the final text will be assembled from verified claims.
 - guessFirst = true when the question invites the child to guess before reading the answer.
+- guessChoices: ONLY when guessFirst = true, 2 or 3 very short hypotheses (6 words max each) the child could pick BEFORE reading the answer. They are guesses, not facts: phrase them as possibilities ("More than 100", "About ten", "Because of dust"), never say which one is right, and never put them in claims. Omit the field (or use []) when guessFirst = false.
+- Even when guessFirst = true (or when the child says "guess"), you MUST still give the full answer in claims: the interface hides it until the child has guessed. Never return empty claims to keep the suspense.
+- followUps are QUESTIONS only: never put a fact, a number or an answer in them.
+- Write plain text only: no Markdown, no asterisks, no underscores, no headings, no bullet lists.
 - Only include a "travel" action if the object exists in the application.
 - 2 to 3 follow-up questions, within the astronomy domain.
 
@@ -75,7 +80,12 @@ CRITICAL RULES:
 - Use ONLY the provided source extracts. Do NOT use your own knowledge.
 - A claim is "supported" ONLY if the extract EXPLICITLY contains the information.
 - A claim with NO extract, or whose extract does NOT mention the information, is "unsupported".
-- "debated" = the extracts show conflicting information or explicit scientific uncertainty.
+- "debated" = ONLY a genuine scientific debate: the extracts explicitly say scientists disagree, that the question is unresolved, or they present competing hypotheses.
+- These are NOT debates — mark them "supported" if at least one extract states the information:
+  • values that agree once rounded or converted ("about 400 km" vs "420 km" vs "250 miles"; "90 minutes" vs "about 1.5 hours"); "about"/"roughly" means an approximation, not uncertainty;
+  • a quantity that naturally varies over time (an orbit's altitude, a changing count of known moons) when the claim gives an approximate or "at least" value;
+  • a planned or scheduled future date or event (a mission planned for 2030, a planned end of operations): it is a plan, not a scientific debate — "supported" if an extract states that plan and the claim presents it as planned;
+  • an extract that simply does not mention the claim — ignore it and judge with the extracts that do.
 - When in doubt, mark "unsupported" — it is better to admit not knowing than to affirm incorrectly.
 - For each "supported" or "debated" verdict, list the source IDs that contain the information in supportingSourceIds.
 
@@ -92,4 +102,4 @@ RULES:
 - Do NOT add any new facts. Only reformulate the provided claims.
 - Do not mention sources or source IDs.
 - Adapt the tone to the reading level (simple, curious, expert).
-- Respond ONLY with the assembled text, no JSON or formatting.`;
+- Respond ONLY with the assembled text, as PLAIN TEXT: no JSON, no Markdown, no asterisks (*), no underscores (_), no headings (#), no bullet lists. For emphasis or a sound effect, write the words plainly ("Poof!" not "*Poof!*").`;

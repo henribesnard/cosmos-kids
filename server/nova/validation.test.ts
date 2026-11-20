@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateRequest, containsPersonalInfo, maskPersonalInfo, isValidTravelDestination } from './validation';
+import { validateRequest, containsPersonalInfo, maskPersonalInfo, isValidTravelDestination, analyzePersonalInfo, FIRST_NAME_PLACEHOLDER } from './validation';
 
 /* ------------------------------------------------------------------ */
 /*  Privacy detection                                                  */
@@ -183,5 +183,60 @@ describe('isValidTravelDestination', () => {
     expect(isValidTravelDestination('pluto')).toBe(false);
     expect(isValidTravelDestination('xyz123')).toBe(false);
     expect(isValidTravelDestination('')).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Lot 2 — natural phrasings (20 cases fr/en, with false positives)   */
+/* ------------------------------------------------------------------ */
+
+describe('analyzePersonalInfo — natural phrasings (lot 2)', () => {
+  const cases: ReadonlyArray<readonly [string, 'none' | 'first-name' | 'personal']> = [
+    // First name alone → masked, question answered
+    ['Je m’appelle Léo, pourquoi Mars est rouge ?', 'first-name'],
+    ['je m\'appelle Inès et je veux savoir combien de lunes a Jupiter', 'first-name'],
+    ['Mon prénom est Zoé, c’est quoi un trou noir ?', 'first-name'],
+    ['My name is Sam, why is the sky dark at night?', 'first-name'],
+    ['I’m called Ava and I love Saturn', 'first-name'],
+    // Full name, residence, school → refused
+    ['Je m’appelle Jean Dupont', 'personal'],
+    ['Mon nom est Marie Leclerc et j’aime les étoiles', 'personal'],
+    ['J’habite à Lyon, on voit les étoiles ?', 'personal'],
+    ['j’habite au 12 rue des Lilas', 'personal'],
+    ['Mon école s’appelle Jules Ferry', 'personal'],
+    ['Je suis en CE2 à l’école Victor Hugo', 'personal'],
+    ['My name is John Smith', 'personal'],
+    ['I live in Manchester, can I see Mars?', 'personal'],
+    ['My school is Greenfield Primary', 'personal'],
+    ['I’m in 4th grade at Lincoln Elementary', 'personal'],
+    // False positives to avoid
+    ['La Lune s’appelle aussi Séléné ?', 'none'],
+    ['J’habite sur Terre, et toi ?', 'none'],
+    ['I live on Earth, where do you live?', 'none'],
+    ['Comment s’appelle la plus grosse lune de Jupiter ?', 'none'],
+    ['Je suis en CE2 et je me demande pourquoi le Soleil brille', 'none'],
+  ];
+
+  it('has 20 cases', () => expect(cases).toHaveLength(20));
+
+  it.each(cases)('%s → %s', (text, level) => {
+    expect(analyzePersonalInfo(text).level).toBe(level);
+  });
+
+  it('masks the first name only, keeping the question intact', () => {
+    const { masked } = analyzePersonalInfo('Je m’appelle Léo, pourquoi Mars est rouge ?');
+    expect(masked).toBe(`Je m’appelle ${FIRST_NAME_PLACEHOLDER}, pourquoi Mars est rouge ?`);
+    expect(masked).not.toContain('Léo');
+  });
+
+  it('masks an English first name too', () => {
+    const { masked } = analyzePersonalInfo('My name is Sam, why is the sky dark at night?');
+    expect(masked).not.toContain('Sam');
+    expect(masked).toContain('why is the sky dark at night?');
+  });
+
+  it('no longer flags "I am" + two words (old false positive)', () => {
+    expect(containsPersonalInfo('I am going to Mars one day')).toBe(false);
+    expect(containsPersonalInfo('I am Very Curious about stars')).toBe(false);
   });
 });

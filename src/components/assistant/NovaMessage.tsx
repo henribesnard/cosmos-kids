@@ -1,11 +1,11 @@
-import type { AssistantMessage, AssistantPhase } from '../../assistant/types';
+import type { AssistantMessage, AssistantPhase, ReadingLevel } from '../../assistant/types';
 import type { Locale } from '../../data/types';
 import { useCosmosStore } from '../../store/useCosmosStore';
 import { GuessFirstCard } from './GuessFirstCard';
 import { NovaAvatar } from './NovaAvatar';
 import { NOVA_TEXT, type SpecialCase } from './novaText';
 import type { SpeechControls } from './novaHooks';
-import { moodForMessage, RECHARGE_MS } from './novaUtils';
+import { moodForMessage, rechargeLeftSeconds, rechargeSecondsOf } from './novaUtils';
 import { TruthSeal } from './TruthSeal';
 
 export type GuessState = { readonly revealed: false } | { readonly revealed: true; readonly guess: string | null };
@@ -14,6 +14,7 @@ interface NovaMessageProps {
   readonly message: AssistantMessage;
   readonly question: string | null;
   readonly locale: Locale;
+  readonly readingLevel?: ReadingLevel;
   readonly special: SpecialCase | null;
   readonly arrivalPhase: AssistantPhase | undefined;
   readonly guess: GuessState;
@@ -39,6 +40,7 @@ export function NovaMessage({
   message,
   question,
   locale,
+  readingLevel = 'curious',
   special,
   guess,
   isLast,
@@ -58,12 +60,11 @@ export function NovaMessage({
   const travelActions = (message.actions ?? []).filter((action) => action.kind === 'travel' && canTravel(action.destinationId));
   const mysteryQuestion = question ?? text;
   const mysteryKept = mysteries.some((mystery) => mystery.question === mysteryQuestion);
-  const rechargeLeft = special === 'rate-limited' && isLast
-    ? Math.min(RECHARGE_MS / 1000, Math.max(0, Math.ceil((message.createdAt + RECHARGE_MS - now) / 1000)))
-    : 0;
+  const rechargeTotal = rechargeSecondsOf(message);
+  const rechargeLeft = special === 'rate-limited' && isLast ? rechargeLeftSeconds(message, now) : 0;
 
   return (
-    <li className={`nova-msg nova-msg--nova${special ? ` nova-msg--${special}` : ''}`}>
+    <li className={`nova-msg nova-msg--nova${special ? ` nova-msg--${special}` : ''}`} data-message-id={message.id}>
       <NovaAvatar mood={mood} size={38} className="nova-msg__avatar" />
       <div className="nova-bubble nova-bubble--nova">
         <p className="nova-bubble__kicker">
@@ -72,7 +73,13 @@ export function NovaMessage({
         </p>
 
         {gated ? (
-          <GuessFirstCard question={question} locale={locale} onReveal={onReveal} />
+          <GuessFirstCard
+            question={question}
+            locale={locale}
+            choices={message.guessChoices}
+            readingLevel={readingLevel}
+            onReveal={onReveal}
+          />
         ) : (
           <>
             {guess.revealed && guess.guess && (
@@ -80,6 +87,11 @@ export function NovaMessage({
                 <p>{t.guessYours(guess.guess)}</p>
                 <p>{t.guessCompare}</p>
               </div>
+            )}
+            {message.privacyNote && !special && (
+              <p className="nova-privacy-note">
+                <span aria-hidden="true">🔒</span> <span className="sr-only">{t.privacyNoteLabel} : </span>{message.privacyNote}
+              </p>
             )}
             <p className="nova-bubble__text">{text}</p>
 
@@ -91,11 +103,15 @@ export function NovaMessage({
               </ul>
             )}
             {special === 'safety' && <p className="nova-safety">{t.safetyAdults}</p>}
-            {special === 'rate-limited' && rechargeLeft > 0 && (
-              <div className="nova-recharge" role="timer" aria-live="off">
-                <span className="nova-recharge__bar" style={{ '--nova-charge': 1 - rechargeLeft / (RECHARGE_MS / 1000) } as React.CSSProperties} />
-                <small>{t.rechargeCountdown(rechargeLeft)}</small>
-              </div>
+            {special === 'rate-limited' && isLast && (
+              rechargeLeft > 0 ? (
+                <div className="nova-recharge" role="timer" aria-live="off">
+                  <span className="nova-recharge__bar" style={{ '--nova-charge': 1 - rechargeLeft / rechargeTotal } as React.CSSProperties} />
+                  <small>{t.rechargeCountdown(rechargeLeft)}</small>
+                </div>
+              ) : (
+                <p className="nova-recharge nova-recharge--done" role="status">{t.rechargeDone}</p>
+              )
             )}
 
             {message.status && !special && (

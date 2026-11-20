@@ -5,10 +5,26 @@
  * Simulates realistic phase transitions and returns canned responses
  * covering every contract case: verified, debated, unknown, off-topic,
  * privacy, safety, rate-limited, error, action travel, guessFirst.
+ *
+ * Lot 2 cases:
+ * - « trop de questions » / "rate limit" → kind 'rate-limited' with a real
+ *   retryAfterSeconds (42 s, short enough to watch the countdown);
+ * - « hors ligne » / "offline" → simulated network failure → phase 'offline'
+ *   (the real navigator.onLine is followed too, like the real hook);
+ * - « je m'appelle Léo, … » / "my name is Sam, …" → normal answer + privacyNote;
+ * - black hole, alien life and « combien de lunes a Jupiter » → guessFirst with
+ *   guessChoices (hypotheses, never verified);
+ * - reading level read from / written to the shared store.
  */
 import { useCallback, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useCosmosStore } from '../store/useCosmosStore';
+import {
+  offlineText,
+  rateLimitedText,
+  useAssistantContext,
+  useLeaveOfflineOnReconnect,
+  useNavigatorOnline,
+  useSharedReadingLevel,
+} from './assistantShared';
 import type {
   AssistantAction,
   AssistantClaim,
@@ -30,26 +46,6 @@ function generateId(): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/* ------------------------------------------------------------------ */
-/*  Context builder (duplicated to avoid circular dep in mock)        */
-/* ------------------------------------------------------------------ */
-
-function useMockContext(): AssistantContext {
-  const locale = useCosmosStore((s) => s.locale);
-  const view = useCosmosStore((s) => s.view);
-  const selectedObjectId = useCosmosStore((s) => s.selectedObjectId);
-  const activeJourneyId = useCosmosStore((s) => s.mission.activeJourneyId);
-  const { pathname } = useLocation();
-
-  return {
-    locale,
-    view: pathname || view,
-    selectedObjectId: selectedObjectId ?? null,
-    activeJourneyId: activeJourneyId ?? null,
-    readingLevel: 'curious',
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,17 +76,34 @@ const CATALOG_SOURCE_ESA: AssistantSource = {
   kind: 'catalog',
 };
 
+export const MOCK_RETRY_AFTER_SECONDS = 42;
+const MOCK_OFFLINE_RE = /\b(hors ligne|hors-ligne|offline|pas de réseau|no network)\b/i;
+
 type MockScenario = {
   detect: (text: string, locale: string) => boolean;
   build: (locale: string, readingLevel: ReadingLevel) => Omit<AssistantMessage, 'id' | 'createdAt' | 'role'>;
   phases: readonly AssistantPhase[];
 };
 
+/** « je m'appelle Léo, … » / "my name is Sam, …" — a first name alone, no surname. */
+const MOCK_FIRST_NAME_RE = /\b(?:je m['’]appelle|mon prénom est|my name is|i['’]m called)\s+[A-Za-zÀ-ÿ-]+\s*(?:[,!.?]|\s+(?:et|and|pourquoi|why|est-ce|c['’]est|what|how|comment))/i;
+
 const MOCK_SCENARIOS: readonly MockScenario[] = [
+  /* 0. First name alone → masked server-side, normal answer + short reminder */
+  {
+    detect: (text) => MOCK_FIRST_NAME_RE.test(text),
+    build: (locale, readingLevel) => ({
+      ...buildDefaultResponse(locale, readingLevel),
+      privacyNote: locale === 'fr'
+        ? 'Petit rappel : en ligne, garde ton prénom pour toi. Je n’en ai pas besoin pour te répondre !'
+        : 'Quick reminder: keep your name to yourself online. I don’t need it to answer you!',
+    }),
+    phases: ['checking', 'searching-catalog', 'verifying'],
+  },
   /* 1. Privacy detection */
   {
     detect: (text) =>
-      /\b(j'habite|mon (nom|adresse|école|téléphone|email|mail)|my (name|address|school|phone|email))\b/i.test(text),
+      /\b(j['’]habite (?:à|a|au|aux|en)|mon (nom|adresse|école|téléphone|email|mail)|my (name|address|school|phone|email)|i live in)\b/i.test(text),
     build: (locale) => ({
       text: locale === 'fr'
         ? 'Je ne peux pas utiliser d\'informations personnelles. Ne partage jamais ton nom complet, ton adresse ou ton école en ligne. Pose-moi plutôt une question sur l\'espace !'
@@ -126,13 +139,21 @@ const MOCK_SCENARIOS: readonly MockScenario[] = [
     }),
     phases: ['checking'],
   },
-  /* 4. Rate-limited simulation */
+  /* 4. Rate-limited simulation — real delay given by the "server" */
   {
     detect: (text) => /\b(rate.?limit|trop de questions)\b/i.test(text),
     build: (locale) => ({
-      text: locale === 'fr'
-        ? 'Tu as posé beaucoup de questions ! Attends quelques minutes avant de continuer.'
-        : 'You\'ve asked a lot of questions! Wait a few minutes before continuing.',
+      text: rateLimitedText(locale === 'en' ? 'en' : 'fr'),
+      kind: 'rate-limited' as const,
+      retryAfterSeconds: MOCK_RETRY_AFTER_SECONDS,
+    }),
+    phases: ['checking'],
+  },
+  /* 4b. Network failure simulation → phase 'offline' */
+  {
+    detect: (text) => MOCK_OFFLINE_RE.test(text),
+    build: (locale) => ({
+      text: offlineText(locale === 'en' ? 'en' : 'fr'),
       kind: 'error' as const,
     }),
     phases: ['checking'],
@@ -236,9 +257,42 @@ const MOCK_SCENARIOS: readonly MockScenario[] = [
           ? ['C\'est quoi un horizon des événements ?', 'Peut-on photographier un trou noir ?']
           : ['What is an event horizon?', 'Can we photograph a black hole?'],
         guessFirst: true,
+        guessChoices: locale === 'fr'
+          ? ['Rien du tout', 'Un point super dense', 'Un tunnel vers ailleurs']
+          : ['Nothing at all', 'A super dense point', 'A tunnel to elsewhere'],
         kind: 'answer' as const,
       };
     },
+    phases: ['checking', 'searching-catalog', 'searching-web', 'verifying'],
+  },
+  /* 7b. Jupiter moons → verified + guessFirst with choices (simple-level demo) */
+  {
+    detect: (text) => /\b(lunes?.*jupiter|jupiter.*moons?)\b/i.test(text),
+    build: (locale) => ({
+      text: locale === 'fr'
+        ? 'Jupiter a 95 lunes reconnues officiellement. Les quatre plus grandes, découvertes par Galilée, s’appellent Io, Europe, Ganymède et Callisto.'
+        : 'Jupiter has 95 officially recognised moons. The four largest, discovered by Galileo, are Io, Europa, Ganymede and Callisto.',
+      status: 'verified',
+      claims: [{
+        text: locale === 'fr' ? 'Jupiter a 95 lunes reconnues officiellement.' : 'Jupiter has 95 officially recognised moons.',
+        status: 'verified',
+        sourceIds: ['src-nasa-jupiter'],
+      }],
+      sources: [{
+        id: 'src-nasa-jupiter',
+        title: 'Jupiter Moons',
+        publisher: 'NASA',
+        url: 'https://science.nasa.gov/jupiter/jupiter-moons/',
+        kind: 'web',
+      }],
+      followUps: locale === 'fr'
+        ? ['C’est quoi la Grande Tache Rouge ?', 'Y a-t-il de l’eau sur Europe ?']
+        : ['What is the Great Red Spot?', 'Is there water on Europa?'],
+      actions: [{ kind: 'travel', destinationId: 'jupiter', label: locale === 'fr' ? 'Emmène-moi voir Jupiter' : 'Take me to Jupiter' }],
+      guessFirst: true,
+      guessChoices: locale === 'fr' ? ['Une seule', 'Une dizaine', 'Presque 100'] : ['Just one', 'About ten', 'Almost 100'],
+      kind: 'answer' as const,
+    }),
     phases: ['checking', 'searching-catalog', 'searching-web', 'verifying'],
   },
   /* 8. Unknown fact */
@@ -265,6 +319,9 @@ const MOCK_SCENARIOS: readonly MockScenario[] = [
           ? ['C\'est quoi le programme SETI ?', 'Y a-t-il de l\'eau ailleurs que sur Terre ?']
           : ['What is the SETI program?', 'Is there water elsewhere than on Earth?'],
         guessFirst: true,
+        guessChoices: locale === 'fr'
+          ? ['Oui, c’est sûr', 'Non, jamais', 'On ne sait pas encore']
+          : ['Yes, for sure', 'No, never', 'We don’t know yet'],
         kind: 'answer' as const,
       };
     },
@@ -377,19 +434,26 @@ const PHASE_DELAYS: Record<AssistantPhase, number> = {
 /* ------------------------------------------------------------------ */
 
 export function useMockAssistant(): UseAssistant {
-  const context = useMockContext();
+  const context = useAssistantContext();
+  const [readingLevel, setReadingLevel] = useSharedReadingLevel();
+  const navigatorOnline = useNavigatorOnline();
   const [messages, setMessages] = useState<readonly AssistantMessage[]>([]);
   const [phase, setPhase] = useState<AssistantPhase>('idle');
   const [isOpen, setIsOpen] = useState(false);
-  const [readingLevel, setReadingLevelState] = useState<ReadingLevel>('curious');
   const [remainingQuestions, setRemainingQuestions] = useState<number | null>(20);
   const questionCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
 
+  useLeaveOfflineOnReconnect(setPhase);
+
   const ask = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || busyRef.current) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setPhase('offline');
+      return;
+    }
     busyRef.current = true;
 
     abortRef.current?.abort();
@@ -421,10 +485,12 @@ export function useMockAssistant(): UseAssistant {
 
     if (controller.signal.aborted) return;
 
-    // Handle rate-limit scenario
-    if (/\b(rate.?limit|trop de questions)\b/i.test(trimmed)) {
+    if (responseData.kind === 'rate-limited') {
       setPhase('rate-limited');
-    } else if (/\b(erreur|error|crash|bug)\b/i.test(trimmed)) {
+      setRemainingQuestions(0);
+    } else if (MOCK_OFFLINE_RE.test(trimmed)) {
+      setPhase('offline');
+    } else if (responseData.kind === 'error') {
       setPhase('error');
     } else {
       setPhase('done');
@@ -439,8 +505,10 @@ export function useMockAssistant(): UseAssistant {
     };
     setMessages((prev) => [...prev, novaMsg]);
 
-    questionCountRef.current += 1;
-    setRemainingQuestions(Math.max(0, 20 - questionCountRef.current));
+    if (responseData.kind !== 'rate-limited') {
+      questionCountRef.current += 1;
+      setRemainingQuestions(Math.max(0, 20 - questionCountRef.current));
+    }
     busyRef.current = false;
   }, [context.locale, readingLevel]);
 
@@ -448,7 +516,7 @@ export function useMockAssistant(): UseAssistant {
 
   return {
     messages,
-    phase,
+    phase: navigatorOnline ? phase : 'offline',
     isOpen,
     suggestions,
     remainingQuestions,
@@ -463,7 +531,7 @@ export function useMockAssistant(): UseAssistant {
       questionCountRef.current = 0;
       setRemainingQuestions(20);
     }, []),
-    setReadingLevel: useCallback((level: ReadingLevel) => setReadingLevelState(level), []),
-    readingLevel: readingLevel,
+    setReadingLevel,
+    readingLevel,
   };
 }

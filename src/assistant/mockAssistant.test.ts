@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { useMockAssistant } from './mockAssistant';
+import { MOCK_RETRY_AFTER_SECONDS, useMockAssistant } from './mockAssistant';
+import { useCosmosStore } from '../store/useCosmosStore';
 import type { AssistantMessage } from './types';
 
 /* ------------------------------------------------------------------ */
@@ -26,6 +27,9 @@ function lastNovaMessage(messages: readonly AssistantMessage[]): AssistantMessag
 /* ------------------------------------------------------------------ */
 
 describe('useMockAssistant', () => {
+  beforeEach(() => {
+    useCosmosStore.getState().reset();
+  });
 
   it('starts idle with empty messages', () => {
     const { result } = renderHook(() => useMockAssistant(), { wrapper });
@@ -166,7 +170,67 @@ describe('useMockAssistant', () => {
     expect(result.current.phase).toBe('rate-limited');
     const nova = lastNovaMessage(result.current.messages);
     expect(nova).toBeDefined();
-    expect(nova!.kind).toBe('error');
+    expect(nova!.kind).toBe('rate-limited');
+    expect(nova!.retryAfterSeconds).toBe(MOCK_RETRY_AFTER_SECONDS);
+    expect(result.current.remainingQuestions).toBe(0);
+  });
+
+  it('lot 2 — simulates a network failure → phase offline, left when the connection returns', async () => {
+    const { result } = renderHook(() => useMockAssistant(), { wrapper });
+    await act(async () => {
+      await result.current.ask('hors ligne : test de coupure');
+    });
+    expect(result.current.phase).toBe('offline');
+    expect(lastNovaMessage(result.current.messages)!.kind).toBe('error');
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('lot 2 — follows navigator.onLine like the real hook', () => {
+    const spy = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false);
+    const { result } = renderHook(() => useMockAssistant(), { wrapper });
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    expect(result.current.phase).toBe('offline');
+    spy.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(result.current.phase).toBe('idle');
+    spy.mockRestore();
+  });
+
+  it('lot 2 — a first name alone gets a normal answer with a privacy note', async () => {
+    const { result } = renderHook(() => useMockAssistant(), { wrapper });
+    await act(async () => {
+      await result.current.ask('Je m’appelle Léo, combien y a-t-il de galaxies ?');
+    });
+    const nova = lastNovaMessage(result.current.messages)!;
+    expect(nova.kind).toBe('answer');
+    expect(nova.status).toBe('verified');
+    expect(nova.privacyNote).toMatch(/prénom/);
+  });
+
+  it('lot 2 — guessFirst scenarios carry 2–3 guess choices', async () => {
+    const { result } = renderHook(() => useMockAssistant(), { wrapper });
+    await act(async () => {
+      await result.current.ask('Combien de lunes a Jupiter ?');
+    });
+    const nova = lastNovaMessage(result.current.messages)!;
+    expect(nova.guessFirst).toBe(true);
+    expect(nova.guessChoices!.length).toBeGreaterThanOrEqual(2);
+    expect(nova.guessChoices!.length).toBeLessThanOrEqual(3);
+  });
+
+  it('lot 2 — reading level is the shared store value', () => {
+    const { result } = renderHook(() => useMockAssistant(), { wrapper });
+    act(() => useCosmosStore.getState().setReadingLevel('expert'));
+    expect(result.current.readingLevel).toBe('expert');
+    act(() => result.current.setReadingLevel('simple'));
+    expect(useCosmosStore.getState().readingLevel).toBe('simple');
   });
 
   it('simulates error scenario', async () => {

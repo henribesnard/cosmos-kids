@@ -1,8 +1,7 @@
-import { useState } from 'react';
 import type { Locale, ObjectDisplay } from '../app/uiTypes';
+import type { ReadingLevel } from '../assistant/types';
+import { useCosmosStore } from '../store/useCosmosStore';
 import { Icon } from './Icon';
-
-type ReadingLevel = 'simple' | 'curious' | 'expert';
 
 interface InfoPanelProps {
   locale: Locale;
@@ -12,7 +11,9 @@ interface InfoPanelProps {
 }
 
 export function InfoPanel({ locale, object, onCompare, onClose }: InfoPanelProps) {
-  const [level, setLevel] = useState<ReadingLevel>('simple');
+  // Shared with Nova and persisted (store v5): changing it here changes it there.
+  const level = useCosmosStore((state) => state.readingLevel);
+  const setLevel = useCosmosStore((state) => state.setReadingLevel);
   const fr = locale === 'fr';
   const body = level === 'simple' ? object.description[locale] : level === 'curious' ? object.curious[locale] : object.expert[locale];
   const levels: Array<[ReadingLevel, string]> = [

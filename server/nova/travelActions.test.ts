@@ -183,6 +183,62 @@ describe('computeTravelActions (unit)', () => {
 /*  Handler-level tests (mock provider, draft WITHOUT actions)         */
 /* ------------------------------------------------------------------ */
 
+describe('lot 2 — faux positifs (aliases = noms propres uniquement)', () => {
+  it('« What is the ISS? » ne propose jamais lmc, même si une claim dit « large »', async () => {
+    const r = await ask('What is the International Space Station? fp', 'en', {
+      claimText: 'The International Space Station is a large spacecraft and a grand laboratory in a cloud-free orbit.',
+      modelActions: [{ kind: 'travel', destinationId: 'lmc', label: 'Take me to Large Magellanic Cloud' }],
+    });
+    const ids = r.actions.map((a) => a.destinationId);
+    expect(ids).toContain('iss');
+    expect(ids).not.toContain('lmc');
+    expect(ids).not.toContain('smc');
+  });
+
+  it('« une grande étoile » → aucune action parasite', async () => {
+    const actions = await computeTravelActions(
+      'Qu’est-ce qu’une grande étoile ?',
+      [{ text: 'Une grande étoile est très large, comme un grand nuage brillant.', sourceIds: [] }],
+      'fr',
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it('mots courants anglais (large, small, cloud, station, eagle, ring…) → aucune action', async () => {
+    const actions = await computeTravelActions(
+      'Is a large cloud or a small space station bigger than an eagle?',
+      [{ text: 'A large gas cloud can be huge.', sourceIds: [] }],
+      'en',
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it('un objet seulement nommé dans le texte d’une claim ne suffit plus', async () => {
+    const actions = await computeTravelActions(
+      'Pourquoi les planètes tournent-elles ?',
+      [{ text: 'Mars et Jupiter tournent autour du Soleil.', sourceIds: [] }],
+      'fr',
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it('les noms complets restent reconnus (Grand Nuage de Magellan, Large Magellanic Cloud)', async () => {
+    const fr = await computeTravelActions('C’est quoi le Grand Nuage de Magellan ?', [], 'fr');
+    expect(fr.map((a) => a.destinationId)).toEqual(['lmc']);
+    const en = await computeTravelActions('How far is the Large Magellanic Cloud?', [], 'en');
+    expect(en.map((a) => a.destinationId)).toEqual(['lmc']);
+  });
+
+  it('la source catalogue d’une claim conservée reste une raison valable', async () => {
+    const actions = await computeTravelActions(
+      'Pourquoi les planètes tournent-elles ?',
+      [{ text: 'La Lune tourne autour de la Terre.', sourceIds: ['cat-moon'] }],
+      'fr',
+    );
+    expect(actions.map((a) => a.destinationId)).toEqual(['moon']);
+  });
+});
+
 describe('handler — server-computed travel actions', () => {
   it('« À quelle distance est Mars ? » (draft sans actions) → action mars', async () => {
     const r = await ask('À quelle distance est Mars du Soleil ?', 'fr', {
@@ -238,8 +294,8 @@ describe('handler — server-computed travel actions', () => {
     expect(marsActions).toHaveLength(1);
   });
 
-  it('action valide proposée par le modèle est conservée et fusionnée', async () => {
-    const r = await ask('À quelle distance se trouve Mars exactement ? quater', 'fr', {
+  it('action proposée par le modèle pour un objet nommé dans la question est conservée et fusionnée', async () => {
+    const r = await ask('Mars est-elle plus petite que Jupiter ? quater', 'fr', {
       claimText: 'Mars est la quatrième planète du système solaire.',
       modelActions: [{ kind: 'travel', destinationId: 'jupiter', label: 'Voir Jupiter' }],
     });
@@ -247,5 +303,13 @@ describe('handler — server-computed travel actions', () => {
     expect(ids).toContain('mars');
     expect(ids).toContain('jupiter');
     expect(r.actions.length).toBeLessThanOrEqual(2);
+  });
+
+  it('lot 2 — action du modèle hors question et hors sources citées → rejetée', async () => {
+    const r = await ask('À quelle distance se trouve Mars exactement ? quinquies', 'fr', {
+      claimText: 'Mars est la quatrième planète du système solaire.',
+      modelActions: [{ kind: 'travel', destinationId: 'jupiter', label: 'Voir Jupiter' }],
+    });
+    expect(r.actions.map((a) => a.destinationId)).toEqual(['mars']);
   });
 });
