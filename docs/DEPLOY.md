@@ -4,10 +4,12 @@ Production deployment procedure for the static SPA and the Nova API server behin
 
 ## Prerequisites
 
-- **Local machine**: Node.js 22.13+, npm 11+, SSH access to the VPS
+- **Local machine**: Node.js 22.13+, npm 11+, SSH access to the VPS, bash (Git Bash or WSL on Windows)
 - **VPS**: Ubuntu 24.04+, Caddy 2+, Node.js 22+, systemd
 - **System user**: `cosmoskids` (no shell, runs the Nova service)
 - **Secrets file**: `/etc/cosmos-kids/nova.env` (owner root, group cosmoskids, mode 640)
+
+The deploy script assumes the VPS is already set up: `cosmoskids` user, `/etc/cosmos-kids/nova.env`, `cosmos-kids-nova.service`, and the Caddy block for the domain (with `/api/nova` proxy). The first deployment follows the manual procedure below; subsequent deployments use the script.
 
 ## Architecture
 
@@ -42,6 +44,8 @@ cosmos-kids-nova.service (Node.js, 127.0.0.1:3001)
   nova.env                     # secrets (MISTRAL_API_KEY, EXA_API_KEY, NOVA_*)
 ```
 
+All release files are owned by **root** (directories 755, files 644). The `cosmoskids` service user reads them without write access.
+
 ## Secrets (nova.env)
 
 The file must contain at minimum:
@@ -72,89 +76,86 @@ npm run build:server    # produces dist-server/index.mjs
 
 The server bundle (`dist-server/index.mjs`) is a single self-contained ESM file. It imports only `node:` built-in modules and requires no `node_modules` at runtime.
 
-## Deploy
+## First deployment (manual)
 
-Use the automated script:
+Before the script can be used, set up the VPS:
 
-```bash
-bash scripts/deploy.sh <TAG> <VPS_USER>@<VPS_HOST> <SSH_KEY>
-```
+1. Create the system user: `useradd --system --no-create-home --shell /usr/sbin/nologin cosmoskids`
+2. Create directories: `mkdir -p /var/www/cosmoskids/releases /opt/cosmos-kids/nova /etc/cosmos-kids`
+3. Create the secrets file: `touch /etc/cosmos-kids/nova.env && chown root:cosmoskids /etc/cosmos-kids/nova.env && chmod 640 /etc/cosmos-kids/nova.env`
+4. Fill in the secrets (manually edit `/etc/cosmos-kids/nova.env`)
+5. Install the systemd unit `cosmos-kids-nova.service`
+6. Configure the Caddy block for the domain (with `/api/nova` proxy, `flush_interval -1`, security headers)
+7. Upload the first build, create symlinks, start the service, reload Caddy
+8. Verify via the public domain
 
-Or manually:
+Subsequent deployments use the script.
 
-### 1. Upload
-
-```bash
-RELEASE="$(date +%Y%m%d-%H%M)-<TAG>"
-ssh <VPS> "mkdir -p /var/www/cosmoskids/releases/$RELEASE"
-scp -r dist/* <VPS>:/var/www/cosmoskids/releases/$RELEASE/
-ssh <VPS> "mkdir -p /opt/cosmos-kids/nova/<TAG>"
-scp dist-server/index.mjs <VPS>:/opt/cosmos-kids/nova/<TAG>/
-```
-
-### 2. Switch Nova server
+## Deploy (script)
 
 ```bash
-ssh <VPS> "ln -sfn /opt/cosmos-kids/nova/<TAG> /opt/cosmos-kids/nova/current"
-ssh <VPS> "sudo systemctl restart cosmos-kids-nova"
-ssh <VPS> "curl -sf http://127.0.0.1:3001/health"
+bash scripts/deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN>
 ```
 
-### 3. Switch static site
+The script:
+1. Saves the current symlink targets (`readlink -f`) for exact rollback
+2. Checks out the tag, runs `npm ci`, `npm run build`, `npm run build:server`
+3. Uploads `dist/` and `dist-server/index.mjs` to the VPS (owned by root, 755/644)
+4. Switches the Nova server symlink, restarts the service, checks `/health` locally
+5. Switches the static site symlink
+6. Verifies via the public domain: `https://<DOMAIN>/` (200), `https://<DOMAIN>/trajets/earth-to-moon` (200), `POST https://<DOMAIN>/api/nova` with `{}` (400)
+7. On any check failure: automatic rollback to the saved targets
+8. Lists existing versions and their sizes
+
+### --prune N
+
+By default, old versions are **not** deleted. To clean up after a successful deploy:
 
 ```bash
-ssh <VPS> "ln -sfn /var/www/cosmoskids/releases/$RELEASE /var/www/cosmoskids/current"
+bash scripts/deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN> --prune 3
 ```
 
-### 4. Reload Caddy (only if config changed)
+This keeps the N most recent releases. The current version and the previous version (rollback target) are never deleted, even if N is small.
 
-```bash
-ssh <VPS> "caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
-```
+Without `--prune`, the script lists all versions and their sizes so you can decide.
 
 ## Rollback
 
-### Quick rollback (previous version)
+### Automatic rollback
+
+The deploy script saves the exact symlink targets before deploying. If any check fails, it restores those exact targets. If there was no previous server version (first deployment), it stops the Nova service and restores only the static site.
+
+### Manual rollback
 
 ```bash
-# Find the previous release
-ssh <VPS> "ls -lt /var/www/cosmoskids/releases/ | head -5"
+# 1. Find the previous targets
+ls -lt /var/www/cosmoskids/releases/
+ls -lt /opt/cosmos-kids/nova/
 
-# Switch symlinks back
-ssh <VPS> "ln -sfn /var/www/cosmoskids/releases/<PREVIOUS> /var/www/cosmoskids/current"
-ssh <VPS> "ln -sfn /opt/cosmos-kids/nova/<PREVIOUS_TAG> /opt/cosmos-kids/nova/current"
-ssh <VPS> "sudo systemctl restart cosmos-kids-nova"
+# 2. Switch symlinks back to exact paths
+ln -sfn /var/www/cosmoskids/releases/<PREVIOUS> /var/www/cosmoskids/current
+ln -sfn /opt/cosmos-kids/nova/<PREVIOUS_TAG> /opt/cosmos-kids/nova/current
+systemctl restart cosmos-kids-nova
 ```
 
 If the Caddy config was changed, restore the backup:
 
 ```bash
-ssh <VPS> "cp /etc/caddy/Caddyfile.bak.<TIMESTAMP> /etc/caddy/Caddyfile"
-ssh <VPS> "caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
+cp /etc/caddy/Caddyfile.bak.<TIMESTAMP> /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 ```
 
 ## Health checks
 
 - **Nova health**: `curl http://127.0.0.1:3001/health` (from VPS)
-- **Nova API**: `curl -X POST https://<DOMAIN>/api/nova -H 'Content-Type: application/json' -d '{"question":"test","locale":"fr"}'`
+- **Nova via domain**: `curl -X POST https://<DOMAIN>/api/nova -H 'Content-Type: application/json' -d '{"question":"test","locale":"fr"}'`
 - **Static site**: `curl -sf -o /dev/null -w '%{http_code}' https://<DOMAIN>/`
 - **Deep routes**: `/trajets/earth-to-moon`, `/carnet`, `/parents`
-
-## Cleanup
-
-The deploy script keeps the 3 most recent static releases and the 3 most recent server bundles. To clean manually:
-
-```bash
-# List releases by date
-ls -lt /var/www/cosmoskids/releases/
-# Remove old ones (never remove the current symlink target)
-rm -rf /var/www/cosmoskids/releases/<OLD>
-```
 
 ## Monitoring
 
 - **Service logs**: `journalctl -u cosmos-kids-nova -f`
-- **Certificate renewal**: automatic via Caddy (check `caddy certificates` or Caddy logs)
+- **Certificate renewal**: automatic via Caddy (check Caddy logs)
 - **Disk space**: `df -h /` (keep below 85%)
 - **Mistral/Exa costs**: track via their respective dashboards
 - **Rate limit**: default 20 questions/hour/IP (configurable via `NOVA_MAX_QUESTIONS_PER_HOUR`)

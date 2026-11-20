@@ -2,31 +2,53 @@
 #
 # Deploy COSMOS KIDS + Nova to the VPS.
 #
+# Prerequisites:
+#   - The VPS already has: cosmoskids user, /etc/cosmos-kids/nova.env,
+#     cosmos-kids-nova.service, Caddy config with /api/nova proxy.
+#     (First deployment follows the manual procedure in docs/DEPLOY.md.)
+#   - Run from Git Bash or WSL on Windows, or any bash on Linux/macOS.
+#
 # Usage:
-#   bash scripts/deploy.sh <TAG> <USER@HOST> <SSH_KEY>
+#   bash scripts/deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN>
+#
+# Options:
+#   --prune N   After a successful deploy, remove old releases keeping
+#               the N most recent (plus current and previous). Without
+#               this flag, the script only lists existing versions and
+#               their sizes at the end.
 #
 # Example:
-#   bash scripts/deploy.sh nova-v1.1.1 root@10.0.0.1 ~/.ssh/my_key
-#
-# What it does:
-#   1. Checks out the tag in a temporary worktree
-#   2. Builds the static SPA (dist/) and the Nova server bundle (dist-server/)
-#   3. Uploads both to the VPS
-#   4. Switches symlinks and restarts the Nova service
-#   5. Runs health checks; rolls back automatically on failure
-#   6. Cleans up old releases (keeps 3 most recent)
+#   bash scripts/deploy.sh nova-v1.1.1 root@10.0.0.1 ~/.ssh/key cosmoskids.example.com
+#   bash scripts/deploy.sh nova-v1.2.0 root@10.0.0.1 ~/.ssh/key cosmoskids.example.com --prune 3
 #
 # No secrets or hostnames are hardcoded in this script.
 
 set -euo pipefail
 
 # ------------------------------------------------------------------
-#  Arguments
+#  Parse arguments
 # ------------------------------------------------------------------
 
-TAG="${1:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY>}"
-VPS="${2:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY>}"
-SSH_KEY="${3:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY>}"
+PRUNE_KEEP=""
+
+positional=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prune)
+      PRUNE_KEEP="${2:?--prune requires a number}"
+      shift 2
+      ;;
+    *)
+      positional+=("$1")
+      shift
+      ;;
+  esac
+done
+
+TAG="${positional[0]:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN> [--prune N]}"
+VPS="${positional[1]:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN> [--prune N]}"
+SSH_KEY="${positional[2]:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN> [--prune N]}"
+DOMAIN="${positional[3]:?Usage: deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN> [--prune N]}"
 
 SSH="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 SCP="scp -i $SSH_KEY -o StrictHostKeyChecking=accept-new"
@@ -41,8 +63,11 @@ SERVICE="cosmos-kids-nova"
 WORKDIR=""
 
 # ------------------------------------------------------------------
-#  Helpers
+#  Save current symlink targets (for rollback)
 # ------------------------------------------------------------------
+
+PREV_STATIC_TARGET=$($SSH "$VPS" "readlink -f $STATIC_LINK 2>/dev/null || echo ''" || true)
+PREV_SERVER_TARGET=$($SSH "$VPS" "readlink -f $SERVER_LINK 2>/dev/null || echo ''" || true)
 
 info()  { echo "==> $*"; }
 fail()  { echo "FAIL: $*" >&2; exit 1; }
@@ -59,20 +84,31 @@ rollback() {
   echo ""
   echo "!!! ROLLBACK !!!"
   echo ""
-  local prev_static prev_server
-  prev_static=$($SSH "$VPS" "ls -t /var/www/cosmoskids/releases/ | head -2 | tail -1" 2>/dev/null || true)
-  prev_server=$($SSH "$VPS" "ls -t /opt/cosmos-kids/nova/ | grep -v current | head -2 | tail -1" 2>/dev/null || true)
 
-  if [ -n "$prev_static" ]; then
-    info "Rolling back static site to $prev_static"
-    $SSH "$VPS" "ln -sfn /var/www/cosmoskids/releases/$prev_static $STATIC_LINK"
+  # Restore static site
+  if [ -n "$PREV_STATIC_TARGET" ] && [ "$PREV_STATIC_TARGET" != "" ]; then
+    info "Rolling back static site to $PREV_STATIC_TARGET"
+    $SSH "$VPS" "ln -sfn $PREV_STATIC_TARGET $STATIC_LINK"
   fi
-  if [ -n "$prev_server" ]; then
-    info "Rolling back server to $prev_server"
-    $SSH "$VPS" "ln -sfn /opt/cosmos-kids/nova/$prev_server $SERVER_LINK && systemctl restart $SERVICE"
+
+  # Restore server (or stop it if there was no previous version)
+  if [ -n "$PREV_SERVER_TARGET" ] && [ "$PREV_SERVER_TARGET" != "" ]; then
+    info "Rolling back server to $PREV_SERVER_TARGET"
+    $SSH "$VPS" "ln -sfn $PREV_SERVER_TARGET $SERVER_LINK && systemctl restart $SERVICE"
+  else
+    info "No previous server version — stopping $SERVICE"
+    $SSH "$VPS" "systemctl stop $SERVICE 2>/dev/null || true"
   fi
+
   fail "Deployment failed. Rolled back to previous version."
 }
+
+# ------------------------------------------------------------------
+#  Display saved state
+# ------------------------------------------------------------------
+
+info "Previous static target: ${PREV_STATIC_TARGET:-<none>}"
+info "Previous server target: ${PREV_SERVER_TARGET:-<none>}"
 
 # ------------------------------------------------------------------
 #  Step 1: Build locally
@@ -98,14 +134,7 @@ npm run build:server
 info "Build complete: dist/ + dist-server/index.mjs"
 
 # ------------------------------------------------------------------
-#  Step 2: Save current state on VPS (for rollback)
-# ------------------------------------------------------------------
-
-PREV_STATIC=$($SSH "$VPS" "readlink $STATIC_LINK 2>/dev/null || echo ''" | xargs basename 2>/dev/null || true)
-info "Previous static release: ${PREV_STATIC:-none}"
-
-# ------------------------------------------------------------------
-#  Step 3: Upload
+#  Step 2: Upload
 # ------------------------------------------------------------------
 
 info "Creating directories on VPS"
@@ -117,11 +146,11 @@ $SCP -r dist/* "$VPS:$STATIC_DIR/"
 info "Uploading server bundle"
 $SCP dist-server/index.mjs "$VPS:$SERVER_DIR/"
 
-# Set ownership if cosmoskids user exists
-$SSH "$VPS" "id cosmoskids >/dev/null 2>&1 && chown -R cosmoskids:cosmoskids $SERVER_DIR || true"
+# Ownership: root owns everything, cosmoskids reads only
+$SSH "$VPS" "chown -R root:root $STATIC_DIR $SERVER_DIR && chmod -R u=rwX,go=rX $STATIC_DIR $SERVER_DIR"
 
 # ------------------------------------------------------------------
-#  Step 4: Switch Nova server
+#  Step 3: Switch Nova server + local health check
 # ------------------------------------------------------------------
 
 info "Switching Nova server symlink to $TAG"
@@ -131,51 +160,99 @@ info "Restarting $SERVICE"
 $SSH "$VPS" "systemctl restart $SERVICE"
 sleep 2
 
-info "Checking Nova /health"
+info "Checking Nova /health (local)"
 HEALTH=$($SSH "$VPS" "curl -sf http://127.0.0.1:3001/health" 2>/dev/null || true)
 if echo "$HEALTH" | grep -q '"status":"ok"'; then
-  info "Nova health check passed"
+  info "Nova local health check passed"
 else
-  echo "Health check failed: $HEALTH"
+  echo "Local health check failed: $HEALTH"
   rollback
 fi
 
 # ------------------------------------------------------------------
-#  Step 5: Switch static site
+#  Step 4: Switch static site
 # ------------------------------------------------------------------
 
 info "Switching static site symlink to $RELEASE"
 $SSH "$VPS" "ln -sfn $STATIC_DIR $STATIC_LINK"
 
-info "Verifying static site"
-HTTP_CODE=$($SSH "$VPS" "curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:80/ --resolve '*:80:127.0.0.1'" 2>/dev/null || echo "000")
-# Caddy may not resolve localhost; check via the domain if direct check fails
-if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "301" ] && [ "$HTTP_CODE" != "308" ]; then
-  info "Local check returned $HTTP_CODE (expected with Caddy on-demand TLS); skipping local static check"
+# ------------------------------------------------------------------
+#  Step 5: Public checks via DOMAIN
+# ------------------------------------------------------------------
+
+info "Checking https://$DOMAIN/ (expect 200)"
+HTTP_ROOT=$(curl -sf -o /dev/null -w '%{http_code}' "https://$DOMAIN/" 2>/dev/null || echo "000")
+if [ "$HTTP_ROOT" = "200" ]; then
+  info "Homepage: 200 OK"
+else
+  echo "Homepage returned $HTTP_ROOT (expected 200)"
+  rollback
 fi
 
-# ------------------------------------------------------------------
-#  Step 6: Post-deploy checks
-# ------------------------------------------------------------------
-
-info "POST /api/nova with invalid body (expect 400)"
-NOVA_CHECK=$($SSH "$VPS" "curl -sf -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3001/api/nova -H 'Content-Type: application/json' -d '{}'" 2>/dev/null || echo "000")
-if [ "$NOVA_CHECK" = "400" ]; then
-  info "Nova validation check passed (400 on empty body)"
+info "Checking https://$DOMAIN/trajets/earth-to-moon (expect 200)"
+HTTP_ROUTE=$(curl -sf -o /dev/null -w '%{http_code}' "https://$DOMAIN/trajets/earth-to-moon" 2>/dev/null || echo "000")
+if [ "$HTTP_ROUTE" = "200" ]; then
+  info "Deep route: 200 OK"
 else
-  echo "Nova validation check returned $NOVA_CHECK (expected 400)"
+  echo "Deep route returned $HTTP_ROUTE (expected 200)"
+  rollback
+fi
+
+info "Checking POST https://$DOMAIN/api/nova with empty body (expect 400)"
+HTTP_NOVA=$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/nova" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo "000")
+if [ "$HTTP_NOVA" = "400" ]; then
+  info "Nova via Caddy: 400 on empty body (route works)"
+else
+  echo "Nova via domain returned $HTTP_NOVA (expected 400)"
   rollback
 fi
 
 # ------------------------------------------------------------------
-#  Step 7: Cleanup old releases (keep 3 most recent)
+#  Step 6: Version listing / optional prune
 # ------------------------------------------------------------------
 
-info "Cleaning up old static releases (keeping 3)"
-$SSH "$VPS" "cd /var/www/cosmoskids/releases && ls -t | tail -n +4 | xargs -r rm -rf"
+echo ""
+info "Existing static releases:"
+$SSH "$VPS" "du -sh /var/www/cosmoskids/releases/*/ 2>/dev/null || echo '  (none)'"
 
-info "Cleaning up old server bundles (keeping 3)"
-$SSH "$VPS" "cd /opt/cosmos-kids/nova && ls -t | grep -v current | tail -n +4 | xargs -r rm -rf"
+info "Existing server bundles:"
+$SSH "$VPS" "du -sh /opt/cosmos-kids/nova/*/ 2>/dev/null | grep -v current || echo '  (none)'"
+
+if [ -n "$PRUNE_KEEP" ]; then
+  info "Pruning old releases (keeping $PRUNE_KEEP plus current and previous)..."
+
+  # Build a list of protected paths (current + previous, deduplicated)
+  PROTECT_STATIC="$STATIC_DIR"
+  [ -n "$PREV_STATIC_TARGET" ] && PROTECT_STATIC="$PROTECT_STATIC $PREV_STATIC_TARGET"
+  PROTECT_SERVER="$SERVER_DIR"
+  [ -n "$PREV_SERVER_TARGET" ] && PROTECT_SERVER="$PROTECT_SERVER $PREV_SERVER_TARGET"
+
+  # Prune static releases
+  $SSH "$VPS" "
+    cd /var/www/cosmoskids/releases
+    for d in \$(ls -t | tail -n +\$(($PRUNE_KEEP + 1))); do
+      full=\"/var/www/cosmoskids/releases/\$d\"
+      case \" $PROTECT_STATIC \" in
+        *\" \$full \"*) echo \"  keeping (protected): \$d\" ;;
+        *) echo \"  removing: \$d\"; rm -rf \"\$full\" ;;
+      esac
+    done
+  "
+
+  # Prune server bundles
+  $SSH "$VPS" "
+    cd /opt/cosmos-kids/nova
+    for d in \$(ls -t | grep -v current | tail -n +\$(($PRUNE_KEEP + 1))); do
+      full=\"/opt/cosmos-kids/nova/\$d\"
+      case \" $PROTECT_SERVER \" in
+        *\" \$full \"*) echo \"  keeping (protected): \$d\" ;;
+        *) echo \"  removing: \$d\"; rm -rf \"\$full\" ;;
+      esac
+    done
+  "
+else
+  info "(Use --prune N to remove old versions)"
+fi
 
 # ------------------------------------------------------------------
 #  Done
@@ -183,9 +260,18 @@ $SSH "$VPS" "cd /opt/cosmos-kids/nova && ls -t | grep -v current | tail -n +4 | 
 
 echo ""
 info "Deployment of $TAG complete."
-info "  Static: $STATIC_LINK -> $STATIC_DIR"
-info "  Server: $SERVER_LINK -> $SERVER_DIR"
+info "  Static:  $STATIC_LINK -> $STATIC_DIR"
+info "  Server:  $SERVER_LINK -> $SERVER_DIR"
+info "  Domain:  https://$DOMAIN/"
 echo ""
-info "Rollback command:"
-info "  ln -sfn /var/www/cosmoskids/releases/$PREV_STATIC $STATIC_LINK"
-info "  ln -sfn /opt/cosmos-kids/nova/<PREV_TAG> $SERVER_LINK && systemctl restart $SERVICE"
+info "Manual rollback:"
+if [ -n "$PREV_STATIC_TARGET" ]; then
+  info "  ln -sfn $PREV_STATIC_TARGET $STATIC_LINK"
+else
+  info "  (no previous static version)"
+fi
+if [ -n "$PREV_SERVER_TARGET" ]; then
+  info "  ln -sfn $PREV_SERVER_TARGET $SERVER_LINK && systemctl restart $SERVICE"
+else
+  info "  systemctl stop $SERVICE   # (no previous server version)"
+fi
