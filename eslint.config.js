@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', 'Techno 3D et écrans prioritaires-handoff/**'] },
+  { ignores: ['dist', 'dist-server', 'coverage', 'node_modules', 'Techno 3D et écrans prioritaires-handoff/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
