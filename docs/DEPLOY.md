@@ -17,9 +17,14 @@ The deploy script assumes the VPS is already set up: `cosmoskids` user, `/etc/co
 Client (browser)
     |
     v
+Cloudflare (CDN / TLS termination)
+    |
+    v
 Caddy (443/80)
+    |-- /api/nova           --> only from Cloudflare IPs:
+    |                           reverse_proxy 127.0.0.1:3001 (SSE, no buffering)
+    |                           non-Cloudflare → 403
     |-- /assets/*           --> static files (dist/)
-    |-- /api/nova           --> reverse_proxy 127.0.0.1:3001 (SSE, no buffering)
     |-- /*                  --> SPA fallback (index.html)
     v
 cosmos-kids-nova.service (Node.js, 127.0.0.1:3001)
@@ -27,6 +32,8 @@ cosmos-kids-nova.service (Node.js, 127.0.0.1:3001)
     +--> Mistral API (api.mistral.ai)
     +--> Exa Search  (api.exa.ai, optional)
 ```
+
+The site is behind **Cloudflare**. Caddy receives connections from Cloudflare edge servers, not directly from clients. The real client IP is in the `Cf-Connecting-Ip` header set by Cloudflare.
 
 ## Directory layout
 
@@ -85,11 +92,36 @@ Before the script can be used, set up the VPS:
 3. Create the secrets file: `touch /etc/cosmos-kids/nova.env && chown root:cosmoskids /etc/cosmos-kids/nova.env && chmod 640 /etc/cosmos-kids/nova.env`
 4. Fill in the secrets (manually edit `/etc/cosmos-kids/nova.env`)
 5. Install the systemd unit `cosmos-kids-nova.service`
-6. Configure the Caddy block for the domain (with `/api/nova` proxy, `flush_interval -1`, security headers)
+6. Configure the Caddy block for the domain (see [Caddy and Cloudflare](#caddy-and-cloudflare) below)
 7. Upload the first build, create symlinks, start the service, reload Caddy
 8. Verify via the public domain
 
 Subsequent deployments use the script.
+
+## Caddy and Cloudflare
+
+The site is behind Cloudflare. The Caddy block for `/api/nova` restricts access to Cloudflare edge IPs only, and forwards the real client IP via `Cf-Connecting-Ip`:
+
+```caddyfile
+handle /api/nova {
+    @not_cloudflare not remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+    respond @not_cloudflare 403
+
+    request_body {
+        max_size 16KB
+    }
+    reverse_proxy 127.0.0.1:3001 {
+        flush_interval -1
+        header_up X-Forwarded-For {http.request.header.Cf-Connecting-Ip}
+    }
+}
+```
+
+This prevents:
+- Direct-to-VPS requests bypassing Cloudflare (blocked with 403)
+- Spoofed `X-Forwarded-For` or `Cf-Connecting-Ip` headers from non-Cloudflare sources
+
+The Cloudflare IP ranges come from https://www.cloudflare.com/ips/. **Re-check periodically** (Cloudflare occasionally adds new ranges). If a new range is added and the Caddyfile is not updated, requests routed through that edge will get 403.
 
 ## Deploy (script)
 
@@ -98,7 +130,7 @@ bash scripts/deploy.sh <TAG> <USER@HOST> <SSH_KEY> <DOMAIN>
 ```
 
 The script:
-1. Saves the current symlink targets (`readlink -f`) for exact rollback
+1. Saves the current symlink targets (checks `[ -L ]` then `readlink -f`) for exact rollback
 2. Checks out the tag, runs `npm ci`, `npm run build`, `npm run build:server`
 3. Uploads `dist/` and `dist-server/index.mjs` to the VPS (owned by root, 755/644)
 4. Switches the Nova server symlink, restarts the service, checks `/health` locally
@@ -159,3 +191,4 @@ caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 - **Disk space**: `df -h /` (keep below 85%)
 - **Mistral/Exa costs**: track via their respective dashboards
 - **Rate limit**: default 20 questions/hour/IP (configurable via `NOVA_MAX_QUESTIONS_PER_HOUR`)
+- **Cloudflare IP ranges**: re-check https://www.cloudflare.com/ips/ periodically and update the Caddyfile `@not_cloudflare` matcher if ranges change

@@ -66,8 +66,8 @@ WORKDIR=""
 #  Save current symlink targets (for rollback)
 # ------------------------------------------------------------------
 
-PREV_STATIC_TARGET=$($SSH "$VPS" "readlink -f $STATIC_LINK 2>/dev/null || echo ''" || true)
-PREV_SERVER_TARGET=$($SSH "$VPS" "readlink -f $SERVER_LINK 2>/dev/null || echo ''" || true)
+PREV_STATIC_TARGET=$($SSH "$VPS" "[ -L $STATIC_LINK ] && readlink -f $STATIC_LINK || echo ''" || true)
+PREV_SERVER_TARGET=$($SSH "$VPS" "[ -L $SERVER_LINK ] && readlink -f $SERVER_LINK || echo ''" || true)
 
 info()  { echo "==> $*"; }
 fail()  { echo "FAIL: $*" >&2; exit 1; }
